@@ -1,0 +1,170 @@
+/* 可过渡的沙色自定义属性：theme 切换时颜色平滑渐变（不支持 @property 的浏览器直接换色） */
+@property --sand-a {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: rgba(243, 201, 105, 0.85);
+}
+
+@property --sand-b {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: rgba(247, 214, 138, 0.5);
+}
+
+@property --sand-glow {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: rgba(243, 201, 105, 0.16);
+}
+
+@property --energy {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0.6;
+}
+
+.canvas {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(232, 230, 225, 0.03), transparent 70%),
+    var(--color-bg-deep);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-inset), var(--glow-inner-gold);
+  transition:
+    --sand-a var(--duration-slow) var(--ease-out),
+    --sand-b var(--duration-slow) var(--ease-out),
+    --sand-glow var(--duration-slow) var(--ease-out),
+    --energy var(--duration-base) var(--ease-out);
+}
+
+.interactive {
+  cursor: crosshair;
+}
+
+.glow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 50%, var(--sand-glow) 0%, transparent 62%);
+  opacity: calc(0.3 + var(--energy) * 0.7);
+}
+
+.sandWrap {
+  position: absolute;
+  inset: 0;
+  animation: sand-breathe 7s var(--ease-in-out) infinite alternate;
+}
+
+.scattering {
+  animation: sand-scatter 680ms var(--ease-settle);
+}
+
+.layer {
+  position: absolute;
+  inset: 0;
+  opacity: calc(0.35 + var(--energy) * 0.65);
+  animation: layer-in var(--duration-slow) var(--ease-out);
+}
+
+.petals,
+.rings {
+  position: absolute;
+  inset: 0;
+}
+
+.rings {
+  opacity: 0.55;
+}
+
+.spotlight {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    180px circle at var(--mx, 50%) var(--my, 50%),
+    rgba(243, 201, 105, 0.08),
+    transparent 70%
+  );
+  opacity: 0;
+  transition: opacity var(--duration-base) var(--ease-out);
+}
+
+.interactive:hover .spotlight {
+  opacity: 1;
+}
+
+.grid {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  stroke: var(--color-line);
+  stroke-width: 0.35;
+  fill: none;
+}
+
+.corner {
+  stroke: var(--color-gold-dim);
+  stroke-width: 0.6;
+}
+
+.centerDot {
+  fill: var(--color-gold-dim);
+  stroke: none;
+}
+
+.plateCaption {
+  position: absolute;
+  left: var(--space-3);
+  bottom: var(--space-2);
+  font-size: 10px;
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-text-dim);
+  opacity: 0.75;
+  pointer-events: none;
+}
+
+.readout {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-3);
+  font-size: 10px;
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-cyan-dim);
+  pointer-events: none;
+}
+
+@keyframes layer-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes sand-breathe {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.012);
+  }
+}
+
+@keyframes sand-scatter {
+  0% {
+    filter: blur(0);
+    transform: scale(1) rotate(0deg);
+  }
+  30% {
+    filter: blur(4px);
+    transform: scale(1.06) rotate(1.6deg);
+    opacity: 0.65;
+  }
+  100% {
+    filter: blur(0);
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}

@@ -1,0 +1,117 @@
+.slider {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.label {
+  font-size: var(--text-sm);
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-text);
+}
+
+.value {
+  font-size: var(--text-xs);
+  color: var(--color-gold);
+}
+
+.input {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 28px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.input:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+.input:focus-visible {
+  box-shadow: none;
+}
+
+/* ---------- WebKit 轨道 / 滑块 ---------- */
+.input::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: linear-gradient(
+    90deg,
+    var(--color-gold-dim) 0%,
+    var(--color-gold) var(--fill, 50%),
+    rgba(232, 230, 225, 0.12) var(--fill, 50%)
+  );
+}
+
+.input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border-radius: var(--radius-full);
+  background: radial-gradient(circle at 35% 30%, #fbe3a8, var(--color-gold));
+  border: 1px solid rgba(23, 19, 10, 0.6);
+  box-shadow: 0 0 0 1px var(--color-gold-dim);
+  transition: box-shadow var(--duration-base) var(--ease-out);
+}
+
+.input:hover:not(:disabled)::-webkit-slider-thumb,
+.input:focus-visible::-webkit-slider-thumb {
+  box-shadow:
+    0 0 0 2px var(--color-gold),
+    var(--glow-gold);
+}
+
+/* ---------- Firefox 轨道 / 滑块 ---------- */
+.input::-moz-range-track {
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: linear-gradient(
+    90deg,
+    var(--color-gold-dim) 0%,
+    var(--color-gold) var(--fill, 50%),
+    rgba(232, 230, 225, 0.12) var(--fill, 50%)
+  );
+}
+
+.input::-moz-range-thumb {
+  width: 15px;
+  height: 15px;
+  border-radius: var(--radius-full);
+  background: radial-gradient(circle at 35% 30%, #fbe3a8, var(--color-gold));
+  border: 1px solid rgba(23, 19, 10, 0.6);
+  box-shadow: 0 0 0 1px var(--color-gold-dim);
+  transition: box-shadow var(--duration-base) var(--ease-out);
+}
+
+.input:hover:not(:disabled)::-moz-range-thumb,
+.input:focus-visible::-moz-range-thumb {
+  box-shadow:
+    0 0 0 2px var(--color-gold),
+    var(--glow-gold);
+}
+
+/* ---------- 两端语义标签 ---------- */
+.ends {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-text-dim);
+}
+
+.endsArrow {
+  color: var(--color-gold-dim);
+  font-family: var(--font-mono);
+}

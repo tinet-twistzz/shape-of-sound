@@ -1,0 +1,193 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.option {
+  padding: var(--space-4) var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.letter {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  font-size: var(--text-xs);
+  color: var(--color-gold-dim);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-full);
+}
+
+.emoji {
+  flex: none;
+  font-size: 1.6rem;
+  line-height: 1;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.4));
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.name {
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide);
+}
+
+.readout {
+  font-size: 10px;
+  letter-spacing: var(--tracking-hall);
+  text-transform: uppercase;
+  color: var(--color-text-dim);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.preview {
+  min-width: 84px;
+}
+
+/* ---------- 判定态 ---------- */
+.correct,
+.correct:hover {
+  border-color: var(--color-success);
+  box-shadow:
+    var(--shadow-card),
+    0 0 24px rgba(111, 207, 151, 0.18),
+    inset 0 0 24px rgba(111, 207, 151, 0.05);
+}
+
+.correct .letter {
+  color: var(--color-success);
+  border-color: rgba(111, 207, 151, 0.4);
+}
+
+.correctMark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  color: var(--color-bg);
+  background: var(--color-success);
+  border-radius: var(--radius-full);
+  box-shadow: 0 0 12px rgba(111, 207, 151, 0.5);
+  animation: mark-pop var(--duration-base) var(--ease-settle);
+}
+
+.wrong,
+.wrong:hover {
+  border-color: rgba(224, 91, 91, 0.65);
+  box-shadow:
+    var(--shadow-card),
+    0 0 24px rgba(224, 91, 91, 0.12),
+    inset 0 0 24px rgba(224, 91, 91, 0.04);
+  animation: shake 360ms var(--ease-in-out);
+}
+
+.wrong .letter {
+  color: var(--color-danger);
+  border-color: rgba(224, 91, 91, 0.4);
+}
+
+/* ---------- 试听中的迷你均衡器 ---------- */
+.eq {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 11px;
+}
+
+.eq span {
+  width: 3px;
+  height: 100%;
+  border-radius: 1px;
+  background: var(--color-gold);
+  transform-origin: bottom;
+  animation: eq-bounce 620ms var(--ease-in-out) infinite alternate;
+}
+
+.eq span:nth-child(2) {
+  animation-delay: 150ms;
+}
+
+.eq span:nth-child(3) {
+  animation-delay: 300ms;
+}
+
+.mutedHint {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-warning);
+  font-size: var(--text-xs);
+}
+
+@media (max-width: 767px) {
+  .option {
+    padding: var(--space-4);
+  }
+}
+
+@keyframes eq-bounce {
+  from {
+    transform: scaleY(0.25);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+@keyframes mark-pop {
+  from {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-5px);
+  }
+  50% {
+    transform: translateX(4px);
+  }
+  75% {
+    transform: translateX(-2px);
+  }
+}

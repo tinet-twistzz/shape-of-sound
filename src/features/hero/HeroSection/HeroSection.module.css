@@ -1,0 +1,234 @@
+.hero {
+  position: relative;
+  min-height: 100svh;
+  scroll-margin-top: var(--nav-height);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: calc(var(--nav-height) + var(--space-6)) var(--space-5) var(--space-10);
+}
+
+/* ---------- 全屏沙盘背景 ---------- */
+.background {
+  position: absolute;
+  inset: 0;
+}
+
+.background .sand {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  aspect-ratio: auto;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  animation: sand-drift 36s var(--ease-in-out) infinite alternate;
+}
+
+/* 中心压暗保证文字可读，四周保留沙纹，底部沉入夜色衔接下一展区 */
+.scrim {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(
+      ellipse 62% 52% at 50% 46%,
+      rgba(6, 8, 11, 0.88) 0%,
+      rgba(6, 8, 11, 0.62) 55%,
+      rgba(6, 8, 11, 0.18) 100%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(10, 12, 16, 0.72) 0%,
+      rgba(10, 12, 16, 0.24) 30%,
+      rgba(10, 12, 16, 0.36) 68%,
+      var(--color-bg) 98%
+    );
+}
+
+/* ---------- 文案 ---------- */
+.content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  text-align: center;
+  max-width: var(--content-max);
+}
+
+.title {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  font-size: clamp(3.25rem, 9vw, 6.5rem);
+  letter-spacing: 0.16em;
+  margin-right: -0.16em;
+  line-height: var(--leading-tight);
+  text-shadow:
+    0 0 48px rgba(243, 201, 105, 0.28),
+    0 2px 24px rgba(6, 8, 11, 0.8);
+}
+
+.titleEn {
+  font-size: var(--text-md);
+  font-style: italic;
+  font-weight: 500;
+  letter-spacing: var(--tracking-hall);
+  text-transform: uppercase;
+  color: var(--color-gold-dim);
+}
+
+.subtitle {
+  font-family: var(--font-display);
+  font-size: clamp(1.375rem, 3.4vw, 2rem);
+  line-height: var(--leading-title);
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-gold);
+  text-shadow: 0 2px 18px rgba(6, 8, 11, 0.9);
+}
+
+.intro {
+  max-width: 36rem;
+  text-shadow: 0 1px 12px rgba(6, 8, 11, 0.9);
+}
+
+.cta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-4);
+  margin-top: var(--space-2);
+}
+
+/* ---------- 底部滚动提示：细线 + 呼吸 ---------- */
+.scrollHint {
+  position: absolute;
+  inset-inline: 0;
+  bottom: var(--space-5);
+  margin-inline: auto;
+  width: max-content;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-dim);
+  transition: color var(--duration-fast) var(--ease-out);
+}
+
+.scrollHint:hover {
+  color: var(--color-gold);
+}
+
+.scrollHintText {
+  font-size: 10px;
+  letter-spacing: var(--tracking-hall);
+}
+
+.scrollLine {
+  width: 1px;
+  height: 56px;
+  background: linear-gradient(180deg, var(--color-gold-dim), transparent);
+  transform-origin: top;
+  animation: line-breathe 2.8s var(--ease-in-out) infinite;
+}
+
+/* ---------- 入场序列 ---------- */
+.rise {
+  animation: rise-in var(--duration-reveal) var(--ease-settle) both;
+}
+
+.d1 {
+  animation-delay: 60ms;
+}
+
+.d2 {
+  animation-delay: 180ms;
+}
+
+.d3 {
+  animation-delay: 340ms;
+}
+
+.d4 {
+  animation-delay: 460ms;
+}
+
+.d5 {
+  animation-delay: 600ms;
+}
+
+.d6 {
+  animation-delay: 820ms;
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(26px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes line-breathe {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scaleY(0.55);
+  }
+  50% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
+@keyframes sand-drift {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(1.07);
+  }
+}
+
+/* reduced-motion：取消延迟与动画，直接显示 */
+@media (prefers-reduced-motion: reduce) {
+  .rise,
+  .scrollLine,
+  .background .sand {
+    animation: none;
+  }
+
+  .rise {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .hero {
+    padding-bottom: var(--space-9);
+  }
+
+  .cta {
+    flex-direction: column;
+    width: 100%;
+    max-width: 320px;
+  }
+
+  .cta button {
+    width: 100%;
+  }
+
+  .scrollLine {
+    height: 40px;
+  }
+}

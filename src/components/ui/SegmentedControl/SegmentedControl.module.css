@@ -1,0 +1,58 @@
+.group {
+  display: inline-flex;
+  align-items: stretch;
+  gap: 2px;
+  padding: 3px;
+  background: var(--color-bg-deep);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-inset);
+}
+
+.item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  border-radius: var(--radius-full);
+  border: 1px solid transparent;
+  color: var(--color-text-dim);
+  letter-spacing: var(--tracking-wide);
+  white-space: nowrap;
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    background-color var(--duration-base) var(--ease-out),
+    border-color var(--duration-base) var(--ease-out),
+    box-shadow var(--duration-base) var(--ease-out);
+}
+
+.sm .item {
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-xs);
+  min-height: 26px;
+}
+
+.md .item {
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--text-sm);
+  min-height: 34px;
+}
+
+.item:hover:not(:disabled):not(.active) {
+  color: var(--color-text);
+  background: var(--color-border-subtle);
+}
+
+.item:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+.active {
+  color: var(--color-gold);
+  background: var(--color-gold-faint);
+  border-color: var(--color-gold-dim);
+  box-shadow:
+    var(--glow-inner-gold),
+    0 0 12px rgba(243, 201, 105, 0.12);
+}

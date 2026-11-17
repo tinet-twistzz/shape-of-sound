@@ -1,0 +1,54 @@
+import { PatternThumbnail } from '@/components/sand/PatternThumbnail'
+import { copy } from '@/content/copy'
+import type { PatternParams, SoundPreset } from '@/types/domain'
+
+import styles from './TargetPatternCard.module.css'
+
+export interface TargetPatternCardProps {
+  pattern: PatternParams
+  patternName: string
+  /** 展品编号，如「PLATE № 01」 */
+  code: string
+  /** 答对后揭示作者（声音展品），铭牌随之更新 */
+  revealedSound?: SoundPreset | null
+}
+
+/** 画框中的目标图案：金色框缘 + 深色卡纸 + 聚光灯 + 画作名牌 */
+export function TargetPatternCard({
+  pattern,
+  patternName,
+  code,
+  revealedSound,
+}: TargetPatternCardProps) {
+  return (
+    <figure className={styles.frame}>
+      <div className={styles.edge}>
+        <div className={styles.mat}>
+          <PatternThumbnail
+            key={`${pattern.n}-${pattern.m}`}
+            pattern={pattern}
+            size={250}
+            theme="gold"
+            className={styles.thumb}
+          />
+        </div>
+      </div>
+      <figcaption className={styles.plaque}>
+        <span className={`mono ${styles.plaqueCode}`}>
+          {code} · {revealedSound ? copy.sections.quiz.identified : copy.sections.quiz.unidentified}
+        </span>
+        <span className={`display ${styles.plaqueName}`}>{patternName}</span>
+        <span className={`caption ${styles.plaqueNote}`}>
+          {revealedSound ? (
+            <>
+              <span aria-hidden="true">{revealedSound.emoji}</span> {revealedSound.name} ·{' '}
+              {revealedSound.frequencyHz} Hz
+            </>
+          ) : (
+            copy.sections.quiz.anonymousWork
+          )}
+        </span>
+      </figcaption>
+    </figure>
+  )
+}

@@ -1,0 +1,106 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  font-family: var(--font-body);
+  font-weight: 500;
+  letter-spacing: var(--tracking-wide);
+  line-height: 1;
+  white-space: nowrap;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  transition:
+    background-color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-base) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+
+.button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.button:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+}
+
+.button:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+/* ---------- 尺寸 ---------- */
+.sm {
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--text-xs);
+  min-height: 32px;
+}
+
+.md {
+  padding: var(--space-3) var(--space-5);
+  font-size: var(--text-sm);
+  min-height: 42px;
+}
+
+.lg {
+  padding: var(--space-4) var(--space-6);
+  font-size: var(--text-base);
+  min-height: 52px;
+}
+
+/* ---------- 变体 ---------- */
+.primary {
+  background: linear-gradient(180deg, #f7d68a, var(--color-gold));
+  color: #17130a;
+  border-color: var(--color-gold);
+}
+
+.primary:hover:not(:disabled) {
+  box-shadow: var(--glow-gold);
+}
+
+.outline {
+  background: transparent;
+  color: var(--color-gold);
+  border-color: var(--color-gold-dim);
+}
+
+.outline:hover:not(:disabled) {
+  background: var(--color-gold-faint);
+  border-color: var(--color-gold);
+  box-shadow: var(--glow-gold);
+}
+
+.ghost {
+  background: transparent;
+  color: var(--color-text-dim);
+}
+
+.ghost:hover:not(:disabled) {
+  color: var(--color-text);
+  background: var(--color-border-subtle);
+}
+
+.cyan {
+  background: var(--color-cyan-faint);
+  color: var(--color-cyan);
+  border-color: var(--color-cyan-dim);
+}
+
+.cyan:hover:not(:disabled) {
+  border-color: var(--color-cyan);
+  box-shadow: var(--glow-cyan);
+}
+
+.violet {
+  background: var(--color-violet-faint);
+  color: #c99aef;
+  border-color: var(--color-violet-dim);
+}
+
+.violet:hover:not(:disabled) {
+  border-color: var(--color-violet);
+  box-shadow: var(--glow-violet);
+}

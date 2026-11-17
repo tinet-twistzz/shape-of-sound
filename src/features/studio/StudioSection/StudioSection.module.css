@@ -1,0 +1,267 @@
+/* ---------- 双栏布局：左沙盘 / 右仪器控制台 ---------- */
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.stage {
+  min-width: 0;
+}
+
+.canvas {
+  max-width: 560px;
+  margin-inline: auto;
+}
+
+/* ---------- 沙盘下方读数 ---------- */
+.status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 24px;
+  margin-top: var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--color-text-dim);
+}
+
+.statusIcon {
+  color: var(--color-gold-dim);
+}
+
+.statusText {
+  letter-spacing: var(--tracking-wide);
+}
+
+.eq {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 12px;
+}
+
+.eq span {
+  width: 3px;
+  height: 100%;
+  border-radius: 1px;
+  background: var(--color-success);
+  box-shadow: 0 0 6px rgba(111, 207, 151, 0.5);
+  transform-origin: bottom;
+  animation: eq-bounce 620ms var(--ease-in-out) infinite alternate;
+}
+
+.eq span:nth-child(2) {
+  animation-delay: 140ms;
+}
+
+.eq span:nth-child(3) {
+  animation-delay: 280ms;
+}
+
+.eq span:nth-child(4) {
+  animation-delay: 70ms;
+}
+
+/* ---------- 仪器控制台 ---------- */
+.console {
+  position: relative;
+  min-width: 0;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-lg);
+  background:
+    radial-gradient(420px 160px at 50% 0%, rgba(243, 201, 105, 0.04), transparent 70%),
+    linear-gradient(180deg, var(--color-surface-raised), var(--color-surface) 30%);
+  box-shadow: var(--shadow-raised);
+  overflow: hidden;
+}
+
+/* 面板四角的固定螺丝 */
+.screw {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: radial-gradient(circle at 35% 30%, rgba(232, 230, 225, 0.35), rgba(6, 8, 11, 0.9));
+  box-shadow: inset 0 0 2px rgba(0, 0, 0, 0.8);
+  z-index: 1;
+}
+
+.screwTl {
+  top: 10px;
+  left: 10px;
+}
+
+.screwTr {
+  top: 10px;
+  right: 10px;
+}
+
+.screwBl {
+  bottom: 10px;
+  left: 10px;
+}
+
+.screwBr {
+  bottom: 10px;
+  right: 10px;
+}
+
+.consoleHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-6);
+  border-bottom: 1px solid var(--color-line);
+  background: rgba(6, 8, 11, 0.35);
+}
+
+.consoleCode {
+  font-size: 0.625rem;
+  letter-spacing: var(--tracking-hall);
+  text-transform: uppercase;
+  color: var(--color-gold-dim);
+}
+
+.consoleLed {
+  font-size: 0.625rem;
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-text-dim);
+  white-space: nowrap;
+}
+
+.consoleLedOn {
+  color: var(--color-success);
+  text-shadow: 0 0 8px rgba(111, 207, 151, 0.6);
+}
+
+/* ---------- 分组：细线分隔 + 编号 + 小号标签 ---------- */
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-6);
+}
+
+.group + .group {
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.groupHead {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.groupHead::after {
+  content: '';
+  flex: 1;
+  height: 5px;
+  align-self: center;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--color-border-subtle) 0 1px,
+    transparent 1px 7px
+  );
+}
+
+.groupIndex {
+  font-size: 0.625rem;
+  color: var(--color-gold-dim);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-1);
+  line-height: 1.6;
+}
+
+.groupTitle {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-text);
+}
+
+.groupEn {
+  font-size: 0.625rem;
+  letter-spacing: var(--tracking-hall);
+  text-transform: uppercase;
+  color: var(--color-text-dim);
+  order: 1;
+}
+
+/* ---------- 波形监视器 ---------- */
+.monitor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.monitorHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.monitorLabel {
+  font-size: 0.625rem;
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-text-dim);
+}
+
+.monitorState {
+  font-size: 0.625rem;
+  letter-spacing: var(--tracking-hall);
+  color: var(--color-text-dim);
+}
+
+.monitorLive {
+  color: var(--color-cyan);
+  text-shadow: 0 0 8px rgba(86, 207, 225, 0.6);
+}
+
+/* ---------- 宽屏：左右双栏，沙盘随滚动驻留 ---------- */
+@media (min-width: 1200px) {
+  .layout {
+    grid-template-columns: minmax(0, 10fr) minmax(0, 9fr);
+    gap: var(--space-7);
+  }
+
+  .stageSticky {
+    position: sticky;
+    top: calc(var(--nav-height) + var(--space-5));
+  }
+
+  .canvas {
+    max-width: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .layout {
+    gap: var(--space-5);
+  }
+
+  .group {
+    padding: var(--space-4);
+  }
+
+  .consoleHead {
+    padding: var(--space-3) var(--space-5);
+  }
+
+  .consoleCode {
+    letter-spacing: var(--tracking-wide);
+  }
+}
+
+@keyframes eq-bounce {
+  from {
+    transform: scaleY(0.25);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}

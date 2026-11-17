@@ -1,0 +1,193 @@
+.chapter {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+  padding: var(--space-6) 0;
+  scroll-margin-top: var(--space-4);
+}
+
+.chapter + .chapter {
+  border-top: 1px solid transparent;
+  border-image: linear-gradient(90deg, var(--color-line), transparent 85%) 1;
+}
+
+.chapter:first-child {
+  padding-top: var(--space-1);
+}
+
+.chapter:last-child {
+  padding-bottom: var(--space-2);
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.title {
+  font-size: var(--text-xl);
+}
+
+.summary {
+  font-size: var(--text-md);
+  font-weight: 700;
+  line-height: var(--leading-title);
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-gold);
+}
+
+/* ---------- 插图占位：后期替换为动画 ---------- */
+.illustration {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 150px;
+  padding: var(--space-5);
+  border: 1px dashed var(--illustration-dim);
+  border-radius: var(--radius-lg);
+  background:
+    radial-gradient(320px 130px at 50% 100%, var(--illustration-faint), transparent 75%),
+    repeating-radial-gradient(
+      circle at 50% 120%,
+      transparent 0 18px,
+      var(--illustration-faint) 18px 19px
+    ),
+    var(--color-bg-deep);
+  overflow: hidden;
+}
+
+.gold {
+  --illustration-dim: var(--color-gold-dim);
+  --illustration-faint: var(--color-gold-faint);
+  --illustration-color: var(--color-gold);
+}
+
+.cyan {
+  --illustration-dim: var(--color-cyan-dim);
+  --illustration-faint: var(--color-cyan-faint);
+  --illustration-color: var(--color-cyan);
+}
+
+.violet {
+  --illustration-dim: var(--color-violet-dim);
+  --illustration-faint: var(--color-violet-faint);
+  --illustration-color: var(--color-violet);
+}
+
+.illustrationIcon {
+  color: var(--illustration-color);
+  opacity: 0.8;
+}
+
+.illustrationLabel {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-text);
+}
+
+.illustrationCode {
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-text-dim);
+}
+
+/* 三粒漂浮的沙，暗示这里将来会动 */
+.grain {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.grain i {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: var(--illustration-color);
+  opacity: 0.55;
+  animation: drift 5.2s var(--ease-in-out) infinite;
+}
+
+.grain i:nth-child(1) {
+  left: 22%;
+  top: 62%;
+}
+
+.grain i:nth-child(2) {
+  left: 52%;
+  top: 40%;
+  animation-delay: -1.8s;
+  animation-duration: 6.4s;
+}
+
+.grain i:nth-child(3) {
+  left: 78%;
+  top: 66%;
+  animation-delay: -3.1s;
+  animation-duration: 4.6s;
+}
+
+@keyframes drift {
+  0%,
+  100% {
+    transform: translate(0, 0);
+    opacity: 0.55;
+  }
+  35% {
+    transform: translate(6px, -14px);
+    opacity: 0.9;
+  }
+  70% {
+    transform: translate(-5px, -6px);
+    opacity: 0.35;
+  }
+}
+
+/* ---------- 正文 ---------- */
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.paragraph {
+  font-size: var(--text-base);
+  line-height: var(--leading-body);
+  color: var(--color-text);
+}
+
+.goButton {
+  margin-top: var(--space-1);
+}
+
+@media (max-width: 1023px) {
+  .chapter {
+    scroll-margin-top: calc(56px + var(--space-3));
+  }
+}
+
+@media (max-width: 767px) {
+  .chapter {
+    padding: var(--space-5) 0;
+  }
+
+  .title {
+    font-size: var(--text-lg);
+  }
+
+  .summary {
+    font-size: var(--text-base);
+  }
+
+  .illustration {
+    min-height: 128px;
+    padding: var(--space-4);
+  }
+}

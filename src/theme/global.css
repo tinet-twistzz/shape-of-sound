@@ -1,0 +1,191 @@
+/* ============================================================
+   声之形 · 全局样式
+   重置 / 深色基底 / 噪点颗粒 / 滚动条 / 选区 / 展签排版类
+   ============================================================ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  color-scheme: dark;
+  scroll-behavior: smooth;
+  scroll-padding-top: calc(var(--nav-height) + var(--space-2));
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  min-height: 100vh;
+  background-color: var(--color-bg);
+  background-image:
+    radial-gradient(1200px 600px at 50% -10%, rgba(243, 201, 105, 0.05), transparent 60%),
+    radial-gradient(900px 500px at 85% 110%, rgba(157, 78, 221, 0.04), transparent 60%);
+  background-attachment: fixed;
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  line-height: var(--leading-body);
+  letter-spacing: var(--tracking-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* 极淡噪点颗粒纹理（SVG feTurbulence，无外部资源） */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay);
+  pointer-events: none;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 160px 160px;
+}
+
+img,
+svg,
+canvas,
+video {
+  display: block;
+  max-width: 100%;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+}
+
+button {
+  cursor: pointer;
+}
+
+a {
+  color: var(--color-cyan);
+  text-decoration: none;
+  transition: color var(--duration-fast) var(--ease-out);
+}
+
+a:hover {
+  color: var(--color-gold);
+}
+
+ul,
+ol {
+  list-style: none;
+}
+
+/* ---------- 聚焦：柔和金色光晕 ---------- */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--glow-focus);
+  border-radius: var(--radius-sm);
+}
+
+/* ---------- 选中文字 ---------- */
+::selection {
+  background: var(--color-gold);
+  color: var(--color-bg);
+}
+
+/* ---------- 滚动条：美术馆自己的语言 ---------- */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-gold-dim) var(--color-bg-deep);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-bg-deep);
+  border-left: 1px solid var(--color-border-subtle);
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--color-gold-dim), rgba(243, 201, 105, 0.3));
+  border-radius: var(--radius-full);
+  border: 2px solid var(--color-bg-deep);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-gold);
+}
+
+::-webkit-scrollbar-corner {
+  background: var(--color-bg-deep);
+}
+
+/* ============================================================
+   展签式排版类
+   ============================================================ */
+
+/* 展区编号：HALL 01 · 等宽小字 + 细金线 */
+.hall-index {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: var(--tracking-hall);
+  text-transform: uppercase;
+  color: var(--color-gold-dim);
+}
+
+.hall-index::before {
+  content: '';
+  width: 2rem;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--color-gold-dim));
+}
+
+/* 展区标题：衬线体 */
+.display {
+  font-family: var(--font-display);
+  font-weight: 600;
+  line-height: var(--leading-title);
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-text);
+}
+
+/* 微文案：标题下方一行小字 */
+.caption {
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+  color: var(--color-text-dim);
+  letter-spacing: var(--tracking-wide);
+}
+
+/* 等宽刻度 / 读数 */
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--tracking-wide);
+}
+
+/* ---------- 尊重 prefers-reduced-motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

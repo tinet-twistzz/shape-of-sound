@@ -1,0 +1,31 @@
+/* 覆盖 Drawer 默认宽度：宽屏右侧 60%，手机全屏 */
+.drawer.drawer {
+  width: 60vw;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.chapters {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-width: var(--content-narrow);
+}
+
+@media (max-width: 1023px) {
+  .layout {
+    display: block;
+  }
+}
+
+@media (max-width: 767px) {
+  .drawer.drawer {
+    width: 100vw;
+    border-left: none;
+  }
+}

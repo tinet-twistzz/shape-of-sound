@@ -1,0 +1,29 @@
+.footer {
+  border-top: 1px solid var(--color-line);
+  background:
+    radial-gradient(800px 240px at 50% 100%, rgba(243, 201, 105, 0.04), transparent 70%),
+    var(--color-bg-deep);
+  padding: var(--space-8) var(--space-5);
+}
+
+.inner {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.brandLine {
+  font-size: var(--text-lg);
+}
+
+.note {
+  max-width: var(--content-narrow);
+}
+
+.credit {
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-text-dim);
+}

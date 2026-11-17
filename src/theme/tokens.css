@@ -1,0 +1,112 @@
+/* ============================================================
+   声之形 · 设计令牌（Design Tokens）
+   夜间美术馆：深色墙面 / 展签 / 细金线 / 柔和聚光灯 / 仪器刻度
+   ============================================================ */
+
+:root {
+  /* ---------- 色彩 · 核心 ---------- */
+  --color-bg: #0a0c10; /* 夜空黑 */
+  --color-surface: #12151c; /* 展签墙面 */
+  --color-line: rgba(243, 201, 105, 0.18); /* 细金线 */
+  --color-gold: #f3c969; /* 暖金沙 */
+  --color-cyan: #56cfe1; /* 琉璃青 */
+  --color-violet: #9d4edd; /* 极光紫 */
+  --color-text: #e8e6e1; /* 展签正文 */
+  --color-text-dim: #8a8f98; /* 微文案 */
+
+  /* ---------- 色彩 · 派生与层次 ---------- */
+  --color-bg-deep: #06080b; /* 更深的沉底，用于凹陷区 */
+  --color-surface-raised: #171b24; /* 抬升卡片 */
+  --color-overlay: rgba(10, 12, 16, 0.72); /* 弹层遮罩 */
+  --color-scrim: rgba(6, 8, 11, 0.9); /* 深幕布 */
+  --color-border-subtle: rgba(232, 230, 225, 0.08); /* 中性细边 */
+  --color-gold-dim: rgba(243, 201, 105, 0.55);
+  --color-gold-faint: rgba(243, 201, 105, 0.1);
+  --color-cyan-dim: rgba(86, 207, 225, 0.55);
+  --color-cyan-faint: rgba(86, 207, 225, 0.1);
+  --color-violet-dim: rgba(157, 78, 221, 0.55);
+  --color-violet-faint: rgba(157, 78, 221, 0.12);
+
+  /* ---------- 色彩 · 语义 ---------- */
+  --color-success: #6fcf97; /* 沙纹成形 */
+  --color-warning: #e8b44c; /* 频率临界 */
+  --color-danger: #e05b5b; /* 信号丢失 */
+  --color-info: #56cfe1; /* 仪器读数 */
+
+  /* ---------- 字体 ---------- */
+  --font-display: 'Cormorant Garamond', 'Noto Serif SC', 'Songti SC', Georgia, serif;
+  --font-body: 'Inter', 'Noto Sans SC', 'PingFang SC', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SFMono-Regular', 'Menlo', 'Consolas', monospace;
+
+  /* ---------- 字号阶梯 ---------- */
+  --text-xs: 0.75rem; /* 12 · 刻度 / 编号 */
+  --text-sm: 0.875rem; /* 14 · 微文案 */
+  --text-base: 1rem; /* 16 · 正文 */
+  --text-md: 1.125rem; /* 18 · 引言 */
+  --text-lg: 1.375rem; /* 22 · 小标题 */
+  --text-xl: 1.75rem; /* 28 · 展区副题 */
+  --text-2xl: 2.25rem; /* 36 · 展区标题 */
+  --text-3xl: 3rem; /* 48 · 页标题 */
+  --text-display: 4rem; /* 64 · 门面大字 */
+
+  --leading-tight: 1.2;
+  --leading-title: 1.35;
+  --leading-body: 1.75;
+
+  --tracking-hall: 0.35em; /* 展签编号字距 */
+  --tracking-wide: 0.08em;
+  --tracking-body: 0.01em;
+
+  /* ---------- 间距（4px 基准） ---------- */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 2.5rem;
+  --space-8: 3rem;
+  --space-9: 4rem;
+  --space-10: 5rem;
+  --space-11: 6rem;
+  --space-12: 8rem;
+
+  /* ---------- 圆角 ---------- */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 14px;
+  --radius-full: 999px;
+
+  /* ---------- 阴影 ---------- */
+  --shadow-card: 0 1px 0 rgba(232, 230, 225, 0.03) inset, 0 12px 32px rgba(0, 0, 0, 0.45);
+  --shadow-raised: 0 1px 0 rgba(232, 230, 225, 0.05) inset, 0 20px 48px rgba(0, 0, 0, 0.55);
+  --shadow-inset: inset 0 2px 12px rgba(0, 0, 0, 0.5);
+
+  /* ---------- 光晕 ---------- */
+  --glow-gold: 0 0 24px rgba(243, 201, 105, 0.22), 0 0 64px rgba(243, 201, 105, 0.08);
+  --glow-cyan: 0 0 24px rgba(86, 207, 225, 0.22), 0 0 64px rgba(86, 207, 225, 0.08);
+  --glow-violet: 0 0 24px rgba(157, 78, 221, 0.25), 0 0 64px rgba(157, 78, 221, 0.1);
+  --glow-focus: 0 0 0 2px var(--color-bg), 0 0 0 4px var(--color-gold-dim), var(--glow-gold);
+  --glow-inner-gold: inset 0 0 24px rgba(243, 201, 105, 0.05);
+
+  /* ---------- 动效 ---------- */
+  --duration-fast: 140ms; /* 按压 / hover */
+  --duration-base: 240ms; /* 常规过渡 */
+  --duration-slow: 480ms; /* 展签浮现 */
+  --duration-reveal: 800ms; /* 入场序列 */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-settle: cubic-bezier(0.16, 1, 0.3, 1); /* 沙粒落定般的收尾 */
+
+  /* ---------- 层级 ---------- */
+  --z-base: 0;
+  --z-raised: 10;
+  --z-sticky: 100;
+  --z-overlay: 1000;
+  --z-toast: 1100;
+
+  /* ---------- 布局 ---------- */
+  --content-max: 1200px;
+  --content-narrow: 760px;
+  --nav-height: 64px;
+}
