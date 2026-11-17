@@ -1,4 +1,5 @@
 import { PatternThumbnail } from '@/components/sand/PatternThumbnail'
+import { SoundExhibitIcon } from '@/components/ui/icons'
 import { copy } from '@/content/copy'
 import type { PatternParams, SoundPreset } from '@/types/domain'
 
@@ -40,10 +41,14 @@ export function TargetPatternCard({
         <span className={`display ${styles.plaqueName}`}>{patternName}</span>
         <span className={`caption ${styles.plaqueNote}`}>
           {revealedSound ? (
-            <>
-              <span aria-hidden="true">{revealedSound.emoji}</span> {revealedSound.name} ·{' '}
-              {revealedSound.frequencyHz} Hz
-            </>
+            <span className={styles.plaqueReveal}>
+              <SoundExhibitIcon
+                id={revealedSound.id}
+                size={14}
+                className={styles.plaqueIcon}
+              />
+              {revealedSound.name} · {revealedSound.frequencyHz} Hz
+            </span>
           ) : (
             copy.sections.quiz.anonymousWork
           )}

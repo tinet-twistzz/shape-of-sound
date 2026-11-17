@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { PatternThumbnail } from '@/components/sand/PatternThumbnail'
-import { CollectionIcon } from '@/components/ui/icons'
+import { CollectionIcon, SoundExhibitIcon } from '@/components/ui/icons'
 import { copy } from '@/content/copy'
 import type { SoundPreset } from '@/types/domain'
 
@@ -65,7 +65,8 @@ export function CollectionBadge({ collected, total }: CollectionBadgeProps) {
                   <PatternThumbnail pattern={preset.pattern} size={44} theme="gold" />
                   <span className={styles.itemBody}>
                     <span className={styles.itemName}>
-                      <span aria-hidden="true">{preset.emoji}</span> {preset.name}
+                      <SoundExhibitIcon id={preset.id} size={14} className={styles.itemIcon} />
+                      {preset.name}
                     </span>
                     <span className={`mono ${styles.itemCode}`}>{preset.patternName}</span>
                   </span>

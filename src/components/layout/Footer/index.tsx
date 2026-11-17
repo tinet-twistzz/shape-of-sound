@@ -12,6 +12,7 @@ export function Footer() {
           {copy.footer.simulationNote}
           {copy.footer.note}
         </p>
+        <p className={`caption ${styles.audioCredit}`}>{copy.footer.audioCredit}</p>
         <p className={`mono ${styles.credit}`}>{copy.footer.credit}</p>
       </div>
     </footer>

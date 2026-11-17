@@ -20,7 +20,7 @@ import { TargetPatternCard } from '../TargetPatternCard'
 
 import styles from './QuizSection.module.css'
 
-/** mock 演奏时长：试听按钮上的均衡器动画持续时间 */
+/** 试听按钮上的均衡器动画持续时间 */
 const PLAYING_MS = 1400
 
 function QuizSkeleton() {
@@ -48,7 +48,7 @@ export function QuizSection() {
   const scrollTo = useScrollTo()
   const [retryKey, setRetryKey] = useState(0)
   const questions = useAsyncData(() => dataSource.getQuizQuestions(), [dataSource, retryKey])
-  const presets = useAsyncData(() => dataSource.getSoundPresets(), [dataSource, retryKey])
+  const presets = useAsyncData(() => dataSource.getQuizSoundPool(), [dataSource, retryKey])
   const [playingId, setPlayingId] = useState<string | null>(null)
   const playTimer = useRef<number | null>(null)
 
@@ -104,7 +104,8 @@ export function QuizSection() {
   }
 
   const explanation = question
-    ? (copy.sections.quiz.explanations[question.id] ??
+    ? (question.explanation ??
+      copy.sections.quiz.explanations[question.id] ??
       (answerPreset
         ? copy.sections.quiz.explanationFor(answerPreset.name)
         : copy.sections.quiz.explanationGeneric))

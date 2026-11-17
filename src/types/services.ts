@@ -2,6 +2,7 @@ import type { Artwork, PatternParams, PrincipleChapter, QuizQuestion, SoundPrese
 
 export interface DataSource {
   getSoundPresets(): Promise<SoundPreset[]>
+  getQuizSoundPool(): Promise<SoundPreset[]>
   getQuizQuestions(): Promise<QuizQuestion[]>
   getPrincipleChapters(): Promise<PrincipleChapter[]>
 }
@@ -17,6 +18,8 @@ export interface MicFrame {
   pitchHz: number | null
   volume: number
   waveform: Float32Array
+  // 0–1，高频能量占比（音色明亮度）；可选以兼容未提供该字段的数据源
+  brightness?: number
 }
 
 export type MicListener = (frame: MicFrame) => void

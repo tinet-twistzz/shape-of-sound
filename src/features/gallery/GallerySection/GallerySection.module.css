@@ -42,6 +42,25 @@
   color: var(--color-gold-dim);
 }
 
+.playingIcon {
+  flex: none;
+  color: var(--color-gold);
+  filter: drop-shadow(0 0 4px rgba(243, 201, 105, 0.4));
+}
+
+/* 展签标题：图标与展品名基线对齐 */
+.labelTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.labelIcon {
+  flex: none;
+  color: var(--color-gold);
+  filter: drop-shadow(0 0 5px rgba(243, 201, 105, 0.35));
+}
+
 .statusText {
   letter-spacing: var(--tracking-wide);
 }

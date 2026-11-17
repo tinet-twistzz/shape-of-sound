@@ -90,6 +90,18 @@
   font-size: var(--text-xs);
 }
 
+.plaqueReveal {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.plaqueIcon {
+  flex: none;
+  color: var(--color-gold);
+  filter: drop-shadow(0 0 4px rgba(243, 201, 105, 0.35));
+}
+
 @media (max-width: 767px) {
   .mat {
     padding: var(--space-4);

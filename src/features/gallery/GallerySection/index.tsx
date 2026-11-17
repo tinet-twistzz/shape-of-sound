@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/Button'
 import { ExhibitLabel } from '@/components/ui/ExhibitLabel'
 import { SectionHeader } from '@/components/ui/SectionHeader'
 import { Tag } from '@/components/ui/Tag'
-import { QuestionIcon, SpeakerIcon } from '@/components/ui/icons'
+import { QuestionIcon, SoundExhibitIcon, SpeakerIcon } from '@/components/ui/icons'
 import { copy } from '@/content/copy'
 import { useAsyncData } from '@/hooks/useAsyncData'
 import { useServices } from '@/services/serviceContext'
@@ -139,8 +139,13 @@ export function GallerySection() {
                       <span />
                       <span />
                     </span>
+                    <SoundExhibitIcon
+                      id={selected.id}
+                      size={13}
+                      className={styles.playingIcon}
+                    />
                     <span className={styles.statusText}>
-                      {copy.sections.gallery.playingStatus(`${selected.emoji} ${selected.name}`)}
+                      {copy.sections.gallery.playingStatus(selected.name)}
                     </span>
                   </>
                 ) : (
@@ -160,9 +165,10 @@ export function GallerySection() {
               className={styles.label}
               code={copy.sections.gallery.exhibitCode(selectedIndex + 1)}
               title={
-                <>
-                  <span aria-hidden="true">{selected.emoji}</span> {selected.name}
-                </>
+                <span className={styles.labelTitle}>
+                  <SoundExhibitIcon id={selected.id} size={18} className={styles.labelIcon} />
+                  {selected.name}
+                </span>
               }
               rows={[
                 {

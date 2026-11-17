@@ -1,16 +1,4 @@
-/* 可过渡的沙色自定义属性：theme 切换时颜色平滑渐变（不支持 @property 的浏览器直接换色） */
-@property --sand-a {
-  syntax: '<color>';
-  inherits: true;
-  initial-value: rgba(243, 201, 105, 0.85);
-}
-
-@property --sand-b {
-  syntax: '<color>';
-  inherits: true;
-  initial-value: rgba(247, 214, 138, 0.5);
-}
-
+/* 可过渡的自定义属性：theme / energy 切换时平滑渐变（不支持 @property 的浏览器直接换值） */
 @property --sand-glow {
   syntax: '<color>';
   inherits: true;
@@ -35,14 +23,22 @@
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-inset), var(--glow-inner-gold);
   transition:
-    --sand-a var(--duration-slow) var(--ease-out),
-    --sand-b var(--duration-slow) var(--ease-out),
     --sand-glow var(--duration-slow) var(--ease-out),
     --energy var(--duration-base) var(--ease-out);
 }
 
 .interactive {
   cursor: crosshair;
+  touch-action: none;
+}
+
+.surface {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }
 
 .glow {
@@ -50,49 +46,7 @@
   inset: 0;
   background: radial-gradient(circle at 50% 50%, var(--sand-glow) 0%, transparent 62%);
   opacity: calc(0.3 + var(--energy) * 0.7);
-}
-
-.sandWrap {
-  position: absolute;
-  inset: 0;
-  animation: sand-breathe 7s var(--ease-in-out) infinite alternate;
-}
-
-.scattering {
-  animation: sand-scatter 680ms var(--ease-settle);
-}
-
-.layer {
-  position: absolute;
-  inset: 0;
-  opacity: calc(0.35 + var(--energy) * 0.65);
-  animation: layer-in var(--duration-slow) var(--ease-out);
-}
-
-.petals,
-.rings {
-  position: absolute;
-  inset: 0;
-}
-
-.rings {
-  opacity: 0.55;
-}
-
-.spotlight {
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(
-    180px circle at var(--mx, 50%) var(--my, 50%),
-    rgba(243, 201, 105, 0.08),
-    transparent 70%
-  );
-  opacity: 0;
-  transition: opacity var(--duration-base) var(--ease-out);
-}
-
-.interactive:hover .spotlight {
-  opacity: 1;
+  pointer-events: none;
 }
 
 .grid {
@@ -135,36 +89,4 @@
   letter-spacing: var(--tracking-wide);
   color: var(--color-cyan-dim);
   pointer-events: none;
-}
-
-@keyframes layer-in {
-  from {
-    opacity: 0;
-  }
-}
-
-@keyframes sand-breathe {
-  from {
-    transform: scale(1);
-  }
-  to {
-    transform: scale(1.012);
-  }
-}
-
-@keyframes sand-scatter {
-  0% {
-    filter: blur(0);
-    transform: scale(1) rotate(0deg);
-  }
-  30% {
-    filter: blur(4px);
-    transform: scale(1.06) rotate(1.6deg);
-    opacity: 0.65;
-  }
-  100% {
-    filter: blur(0);
-    transform: scale(1) rotate(0deg);
-    opacity: 1;
-  }
 }

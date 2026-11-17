@@ -36,11 +36,26 @@
   border-radius: var(--radius-full);
 }
 
-.emoji {
+/* 翻牌揭晓后的展品细线图标：未选中淡金，命中暖金 */
+.iconWrap {
   flex: none;
-  font-size: 1.6rem;
-  line-height: 1;
-  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.4));
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  color: rgba(243, 201, 105, 0.55);
+}
+
+.mysteryMark {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  font-size: var(--text-base);
+  color: var(--color-gold-dim);
+  border: 1px dashed var(--color-line);
+  border-radius: var(--radius-full);
+  filter: none;
 }
 
 .body {
@@ -54,6 +69,16 @@
 .name {
   font-weight: 600;
   letter-spacing: var(--tracking-wide);
+}
+
+.subtitle {
+  font-size: var(--text-xs);
+  color: var(--color-text-dim);
+  letter-spacing: var(--tracking-wide);
+}
+
+.revealed {
+  animation: identity-reveal 420ms var(--ease-settle);
 }
 
 .readout {
@@ -87,6 +112,15 @@
 .correct .letter {
   color: var(--color-success);
   border-color: rgba(111, 207, 151, 0.4);
+}
+
+.correct .iconWrap {
+  color: var(--color-gold);
+  filter: drop-shadow(0 0 6px rgba(243, 201, 105, 0.45));
+}
+
+.wrong .iconWrap {
+  color: var(--color-text-dim);
 }
 
 .correctMark {
@@ -153,6 +187,17 @@
 @media (max-width: 767px) {
   .option {
     padding: var(--space-4);
+  }
+}
+
+@keyframes identity-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 

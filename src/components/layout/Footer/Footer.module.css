@@ -22,6 +22,11 @@
   max-width: var(--content-narrow);
 }
 
+.audioCredit {
+  max-width: var(--content-narrow);
+  color: var(--color-text-dim);
+}
+
 .credit {
   font-size: var(--text-xs);
   letter-spacing: var(--tracking-wide);

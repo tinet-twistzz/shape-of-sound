@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
-import { CheckIcon, SpeakerIcon, SpeakerMutedIcon } from '@/components/ui/icons'
+import { CheckIcon, SoundExhibitIcon, SpeakerIcon, SpeakerMutedIcon } from '@/components/ui/icons'
 import { copy } from '@/content/copy'
 import type { QuizResult } from '@/store/appStateContext'
 import type { SoundPreset } from '@/types/domain'
@@ -20,7 +20,7 @@ export interface QuizOptionListProps {
 
 const OPTION_LETTERS = ['A', 'B', 'C', 'D']
 
-/** 三个候选声源：试听 + 「就是它」 */
+/** 三个候选声源：提交前盲听防剧透，提交后翻牌揭晓真实身份 */
 export function QuizOptionList({
   options,
   answerSoundId,
@@ -31,6 +31,8 @@ export function QuizOptionList({
   onPreview,
   onChoose,
 }: QuizOptionListProps) {
+  const revealed = result !== null
+
   return (
     <div className={styles.wrap}>
       <ul className={styles.list}>
@@ -39,6 +41,8 @@ export function QuizOptionList({
           const isCorrect = result === 'correct' && preset.id === answerSoundId
           const isWrong = result === 'wrong' && isChosen
           const playing = playingId === preset.id
+          const letter = OPTION_LETTERS[index]
+          const displayName = revealed ? preset.name : copy.sections.quiz.mysteryName(letter)
           const classes = [styles.option, isCorrect && styles.correct, isWrong && styles.wrong]
             .filter(Boolean)
             .join(' ')
@@ -48,13 +52,22 @@ export function QuizOptionList({
               <Card className={classes}>
                 <div className={styles.row}>
                   <span className={`mono ${styles.letter}`} aria-hidden="true">
-                    {OPTION_LETTERS[index]}
+                    {letter}
                   </span>
-                  <span className={styles.emoji} aria-hidden="true">
-                    {preset.emoji}
-                  </span>
-                  <span className={styles.body}>
-                    <span className={styles.name}>{preset.name}</span>
+                  {revealed ? (
+                    <span className={`${styles.iconWrap} ${styles.revealed}`} aria-hidden="true">
+                      <SoundExhibitIcon id={preset.id} size={26} />
+                    </span>
+                  ) : (
+                    <span className={styles.mysteryMark} aria-hidden="true">
+                      {copy.sections.quiz.mysteryMark}
+                    </span>
+                  )}
+                  <span className={`${styles.body} ${revealed ? styles.revealed : ''}`}>
+                    <span className={styles.name}>{displayName}</span>
+                    {revealed && preset.subtitle && (
+                      <span className={styles.subtitle}>{preset.subtitle}</span>
+                    )}
                     <span className={`mono ${styles.readout}`} aria-live="off">
                       {playing
                         ? copy.sections.quiz.playingReadout
@@ -75,7 +88,7 @@ export function QuizOptionList({
                     variant="outline"
                     size="sm"
                     onClick={() => onPreview(preset)}
-                    aria-label={copy.sections.quiz.previewAria(preset.name)}
+                    aria-label={copy.sections.quiz.previewAria(displayName)}
                     className={styles.preview}
                   >
                     {playing ? (

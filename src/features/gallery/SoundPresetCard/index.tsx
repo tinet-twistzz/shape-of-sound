@@ -1,4 +1,5 @@
 import { Card } from '@/components/ui/Card'
+import { SoundExhibitIcon } from '@/components/ui/icons'
 import type { SoundPreset } from '@/types/domain'
 
 import { PITCH_META } from '../pitchMeta'
@@ -11,13 +12,13 @@ export interface SoundPresetCardProps {
   onSelect: () => void
 }
 
-/** 声音展品卡片：emoji + 名称 + 音高等级小标，选中态金色光晕 */
+/** 声音展品卡片：细线展品图标 + 名称 + 音高等级小标，选中态金色光晕 */
 export function SoundPresetCard({ preset, selected, onSelect }: SoundPresetCardProps) {
   const pitch = PITCH_META[preset.pitchLevel]
   return (
     <Card selected={selected} onSelect={onSelect} className={styles.card}>
-      <span className={styles.emoji} aria-hidden="true">
-        {preset.emoji}
+      <span className={styles.iconPlate} aria-hidden="true">
+        <SoundExhibitIcon id={preset.id} />
       </span>
       <span className={styles.body}>
         <span className={styles.name}>{preset.name}</span>

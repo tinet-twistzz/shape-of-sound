@@ -18,10 +18,13 @@ export interface PatternParams {
 export interface SoundPreset {
   id: string
   name: string
+  subtitle?: string
   emoji: string
   description: string
   pitchLevel: PitchLevel
   frequencyHz: number
+  audioUrl?: string
+  attribution?: string
   pattern: PatternParams
   patternName: string
 }
@@ -33,6 +36,7 @@ export interface QuizQuestion {
   optionSoundIds: string[]
   answerSoundId: string
   hint: string
+  explanation?: string
 }
 
 export interface Artwork {

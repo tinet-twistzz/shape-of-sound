@@ -7,25 +7,41 @@
   animation-delay: var(--stagger, 0ms);
 }
 
-.emoji {
+.iconPlate {
   flex-shrink: 0;
   display: grid;
   place-items: center;
   width: 44px;
   height: 44px;
-  font-size: 26px;
-  line-height: 1;
+  color: rgba(226, 221, 205, 0.62);
   background:
     radial-gradient(circle at 50% 38%, rgba(232, 230, 225, 0.05), transparent 72%),
     var(--color-bg-deep);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-inset);
-  transition: border-color var(--duration-base) var(--ease-out);
+  transition:
+    border-color var(--duration-base) var(--ease-out),
+    color var(--duration-base) var(--ease-out),
+    box-shadow var(--duration-base) var(--ease-out);
 }
 
-.card:hover .emoji {
+.card:hover .iconPlate {
   border-color: var(--color-gold-dim);
+  color: var(--color-gold-dim);
+}
+
+/* 选中态：暖金 #F3C969 + 仪器式微光 */
+.card[aria-pressed='true'] .iconPlate {
+  color: var(--color-gold);
+  border-color: var(--color-gold-dim);
+  box-shadow:
+    var(--shadow-inset),
+    0 0 14px rgba(243, 201, 105, 0.16);
+}
+
+.card[aria-pressed='true'] .iconPlate svg {
+  filter: drop-shadow(0 0 5px rgba(243, 201, 105, 0.45));
 }
 
 .body {
@@ -103,10 +119,14 @@
     padding: var(--space-3);
   }
 
-  .emoji {
+  .iconPlate {
     width: 36px;
     height: 36px;
-    font-size: 21px;
+  }
+
+  .iconPlate svg {
+    width: 18px;
+    height: 18px;
   }
 
   .name {

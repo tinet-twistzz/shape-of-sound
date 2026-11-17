@@ -87,8 +87,17 @@
 }
 
 .itemName {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: var(--text-sm);
   font-weight: 600;
+  min-width: 0;
+}
+
+.itemIcon {
+  flex: none;
+  color: var(--color-gold-dim);
 }
 
 .itemCode {

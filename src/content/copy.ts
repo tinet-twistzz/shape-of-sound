@@ -1,11 +1,12 @@
 import type { PitchLevel, SectionId } from '@/types/domain'
 
 const quizExplanations: Record<string, string> = {
-  q1: '心跳最低最慢，沙粒有充足的时间躲进避风港，板上只留得下几瓣大花。',
-  q2: '鲸鱼的歌声低回悠长，音高低、节线少，花纹就简单得只剩几笔粗线。',
-  q3: '小提琴处在中间音区，不低也不尖，花纹疏密适中，像一朵匀称的星芒。',
-  q4: '蚊子嗡嗡声又细又缠人，音高比想象中更高，花纹已经被切成细细的小格。',
-  q5: '小鸟鸣叫冲得最高，板子抖得最快，沙粒只好排成最密最细的蕾丝。',
+  q1: '揭晓：这是澳洲的【迪吉里杜管共鸣】！超低频空气柱驻波波长极长，只能画出错落宽阔的线条。',
+  q2: '揭晓：这是柴可夫斯基《糖梅仙子》里的【钢片琴】！清脆高频的金属敲击音把沙粒雕琢得繁密精细。',
+  q3: '揭晓：这是 1920 年代发明的隔空乐器【特雷门低音】！手不碰琴身，靠电场变化就能震出对称方阵。',
+  q4: '揭晓：这是【琴弓拉响的锯片】！用小提琴弓拉动弯曲钢锯发声，和克拉尼用琴弓拉黄铜板是完全一样的物理原理。',
+  q5: '揭晓：这是【竖琴波节泛音】！乐手轻按琴弦正中不动点拨弦，纯化出的高次谐波在沙盘上织出了整齐棋格。',
+  q6: '通关！这是【特雷门高音咏叹】，极高频率让整张沙盘布满密密麻麻的节点星网。',
 }
 
 const illustrationLabels: Record<string, string> = {
@@ -68,7 +69,7 @@ export const copy = {
       hallIndex: 'HALL 02',
       title: '寻声猜形',
       altTitles: ['听音辨纹'],
-      caption: '看花纹，猜声音。五道题，从大花瓣到细蕾丝，越往后越考验耳朵。',
+      caption: '看花纹，猜声音。六道盲听题，从宽阔线条到星云密网，越往后越考验耳朵。',
       questionCaption: (patternName: string) => `看这幅${patternName}，猜猜它是哪种音调？`,
       submitLabel: '就是它',
       previewLabel: '试听',
@@ -83,7 +84,7 @@ export const copy = {
       collectionLabel: '图鉴',
       collectionEmpty: '还没有收藏——猜对一幅，就能收进一幅。',
       completionTitle: '你已经学会听音辨纹了',
-      completionNote: '低音画出大花瓣，高音绣出细蕾丝。五幅声之形，全部收进了你的图鉴。',
+      completionNote: '低音画出大花瓣，高音绣出细蕾丝。六幅声之形，全部收进了你的图鉴。',
       goStudioLabel: '去声绘工坊亲手创作',
       restartLabel: '重新开始',
       plateCode: (order: number) => `PLATE № ${String(order).padStart(2, '0')}`,
@@ -91,6 +92,8 @@ export const copy = {
       progressSuffix: '幅',
       optionReadout: '候选声源',
       playingReadout: '正在演奏…',
+      mysteryName: (letter: string) => `神秘声源 ${letter}`,
+      mysteryMark: '?',
       previewAria: (name: string) => `试听 ${name}`,
       correctMark: '正确答案',
       idleHint: '先试听三个声音，再对照花纹的疏密作出判断。',
@@ -207,7 +210,9 @@ export const copy = {
   footer: {
     brandLine: '声之形 · The Shape of Sound',
     credit: '灵感来自 Ernst Chladni 的克拉尼图形实验（1787）',
-    note: '本站为声音科普演示，当前声音与粒子均为占位实现。',
+    note: '本站为声音科普演示，粒子为占位实现。',
+    audioCredit:
+      '真实音频源自 Wikimedia Commons 开源声音库（CC0 / Public Domain / CC BY-SA），详情见 public/sounds/CREDITS.md。',
     hallEnd: 'END OF HALLS',
     simulationNote: '图案为示意模拟，真实图案与板的形状、材质有关。',
   },
