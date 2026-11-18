@@ -41,6 +41,95 @@
   box-shadow: 0 0 8px rgba(224, 91, 91, 0.6);
 }
 
+.ledDone {
+  background: var(--color-success);
+  box-shadow: 0 0 8px rgba(111, 207, 151, 0.6);
+}
+
+.countdown {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+}
+
+.countdownNumber {
+  font-size: var(--text-2xl);
+  color: var(--color-cyan);
+  text-shadow: 0 0 14px rgba(86, 207, 225, 0.5);
+}
+
+.meter {
+  width: 100%;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-cyan-faint);
+  overflow: hidden;
+}
+
+.meterFill {
+  display: block;
+  height: 100%;
+  background: var(--color-cyan);
+  transition: width 0.1s linear;
+}
+
+.countdownLabel {
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-text-dim);
+}
+
+.reportCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-4);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  background: var(--color-gold-faint);
+}
+
+.reportTitle {
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-wide);
+  color: var(--color-text-dim);
+}
+
+.reportText {
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+  color: var(--color-text);
+}
+
+.reportActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.plateSwitch {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.subHint {
+  font-size: var(--text-xs);
+  line-height: var(--leading-body);
+  color: var(--color-text-dim);
+}
+
+.modeDesc {
+  font-size: var(--text-xs);
+  line-height: var(--leading-body);
+  color: var(--color-text-dim);
+}
+
 .statusText {
   font-size: var(--text-xs);
   letter-spacing: var(--tracking-wide);

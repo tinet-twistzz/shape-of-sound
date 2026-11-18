@@ -32,6 +32,21 @@
   touch-action: none;
 }
 
+.circle {
+  border-radius: 50%;
+}
+
+.circle .plateCaption {
+  left: 50%;
+  bottom: var(--space-4);
+  transform: translateX(-50%);
+}
+
+.rim {
+  stroke: var(--color-gold-dim);
+  stroke-width: 0.6;
+}
+
 .surface {
   position: absolute;
   inset: 0;

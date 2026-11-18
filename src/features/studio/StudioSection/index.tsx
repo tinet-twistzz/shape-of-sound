@@ -11,15 +11,20 @@ import { useToast } from '@/components/ui/Toast/toastContext'
 import { copy } from '@/content/copy'
 import { useServices } from '@/services/serviceContext'
 import { useAppActions, useAppState } from '@/store/appStateContext'
-import type { Artwork, InputMode } from '@/types/domain'
+import type { Artwork, CompressionMode, InputMode, PatternParams, PlateShape } from '@/types/domain'
 
 import { FrequencySlider } from '../FrequencySlider'
 import { InputModeSwitch } from '../InputModeSwitch'
-import { MicPanel } from '../MicPanel'
+import { CAPTURE_SECONDS, MicPanel } from '../MicPanel'
+import type { CapturePhase, LongPhase } from '../MicPanel'
 import { ParticleThemePicker } from '../ParticleThemePicker'
 import { SignatureForm } from '../SignatureForm'
 import { WaveIndicator } from '../WaveIndicator'
 import { describeFrequency, energyForFrequency, previewWaveform } from '../frequencyMeta'
+import { LONG_MAX_SECONDS, LONG_MIN_SECONDS, compressTimeline } from '../longSoundCompression'
+import type { LongSoundSample, TimelineSlice } from '../longSoundCompression'
+import { analyzeUtterance } from '../utteranceAnalysis'
+import type { UtteranceResult, UtteranceSample } from '../utteranceAnalysis'
 
 import styles from './StudioSection.module.css'
 
@@ -58,16 +63,51 @@ export function StudioSection() {
 
   const [micEnergy, setMicEnergy] = useState<number | null>(null)
   const [micWaveform, setMicWaveform] = useState<Float32Array | null>(null)
+  const [capturePhase, setCapturePhase] = useState<CapturePhase>('idle')
+  const [secondsLeft, setSecondsLeft] = useState(CAPTURE_SECONDS)
+  const [utterance, setUtterance] = useState<UtteranceResult | null>(null)
+  const [plateShape, setPlateShape] = useState<PlateShape>('square')
+  const captureCancelRef = useRef<(() => void) | null>(null)
+  const [longPhase, setLongPhase] = useState<LongPhase>('idle')
+  const [longElapsed, setLongElapsed] = useState(0)
+  const [longDuration, setLongDuration] = useState<number | null>(null)
+  const [longSlices, setLongSlices] = useState<TimelineSlice[] | null>(null)
+  const [compressionMode, setCompressionMode] = useState<CompressionMode>('rings')
+  const [frozenEnergy, setFrozenEnergy] = useState(0.08)
+  const longCancelRef = useRef<(() => void) | null>(null)
+  const finishLongRef = useRef<(() => void) | null>(null)
 
   const { inputMode, frequencyHz, theme, author, micStatus } = studio
   const listening = inputMode === 'mic' && micStatus === 'listening'
+  const inputModeRef = useRef(inputMode)
+  useEffect(() => {
+    inputModeRef.current = inputMode
+  }, [inputMode])
 
-  const pattern = useMemo(
-    () => patternMapper.frequencyToPattern(frequencyHz),
-    [patternMapper, frequencyHz],
-  )
+  const pattern = useMemo((): PatternParams => {
+    if (inputMode === 'mic' && longSlices) {
+      return {
+        n: longSlices[0].n,
+        m: longSlices[0].m,
+        a: 1,
+        b: -1,
+        plateShape: compressionMode === 'rings' ? 'circle' : 'square',
+        compressionMode,
+        timelineSlices: longSlices,
+      }
+    }
+    if (inputMode === 'mic' && utterance) return { ...utterance.pattern, plateShape }
+    return patternMapper.frequencyToPattern(frequencyHz)
+  }, [inputMode, longSlices, compressionMode, utterance, plateShape, patternMapper, frequencyHz])
   const description = describeFrequency(frequencyHz)
-  const energy = listening && micEnergy !== null ? micEnergy : energyForFrequency(frequencyHz)
+  const energy =
+    inputMode === 'mic' && longSlices
+      ? frozenEnergy
+      : inputMode === 'mic' && utterance
+        ? utterance.energy
+        : listening && micEnergy !== null
+          ? micEnergy
+          : energyForFrequency(frequencyHz)
   const sliderWave = useMemo(() => previewWaveform(frequencyHz), [frequencyHz])
   const waveform = inputMode === 'mic' ? micWaveform : sliderWave
 
@@ -88,15 +128,48 @@ export function StudioSection() {
     setMicWaveform(null)
   }, [micInput, actions])
 
-  // 切回滑动调音时收起麦克风
+  const resetLong = useCallback(() => {
+    if (longCancelRef.current) {
+      longCancelRef.current()
+      longCancelRef.current = null
+    }
+    finishLongRef.current = null
+    setLongPhase('idle')
+    setLongSlices(null)
+    setLongDuration(null)
+    setLongElapsed(0)
+  }, [])
+
+  // 切回滑动调音时收起麦克风，并取消进行中的采集与长声录画
   useEffect(() => {
-    if (inputMode === 'slider' && (micStatus === 'listening' || micStatus === 'requesting')) {
+    if (inputMode !== 'slider') return
+    if (captureCancelRef.current) {
+      captureCancelRef.current()
+      captureCancelRef.current = null
+    }
+    resetLong()
+    setCapturePhase('idle')
+    setUtterance(null)
+    if (micStatus === 'listening' || micStatus === 'requesting') {
       stopMic()
     }
-  }, [inputMode, micStatus, stopMic])
+  }, [inputMode, micStatus, stopMic, resetLong])
 
-  // 离开页面 / 卸载时释放麦克风
-  useEffect(() => () => micInput.stop(), [micInput])
+  // 离开页面 / 卸载时释放麦克风与采集定时器
+  useEffect(
+    () => () => {
+      if (captureCancelRef.current) {
+        captureCancelRef.current()
+        captureCancelRef.current = null
+      }
+      if (longCancelRef.current) {
+        longCancelRef.current()
+        longCancelRef.current = null
+      }
+      micInput.stop()
+    },
+    [micInput],
+  )
 
   const startMic = useCallback(async () => {
     actions.setMicStatus('requesting')
@@ -108,6 +181,148 @@ export function StudioSection() {
       actions.setMicStatus(denied ? 'denied' : 'unsupported')
     }
   }, [micInput, actions])
+
+  const handleRealtimeStart = useCallback(() => {
+    setUtterance(null)
+    setCapturePhase('idle')
+    resetLong()
+    void startMic()
+  }, [startMic, resetLong])
+
+  // 说一句话画画：采集 2.5 秒帧数据 → 提取特征 → 定格专属图案
+  const startCapture = useCallback(async () => {
+    if (captureCancelRef.current) return
+    resetLong()
+    setUtterance(null)
+    if (micStatus !== 'listening') {
+      actions.setMicStatus('requesting')
+      try {
+        await micInput.start()
+      } catch (error) {
+        const denied = error instanceof DOMException && error.name === 'NotAllowedError'
+        actions.setMicStatus(denied ? 'denied' : 'unsupported')
+        return
+      }
+      if (inputModeRef.current !== 'mic') return
+      actions.setMicStatus('listening')
+    }
+    const samples: UtteranceSample[] = []
+    const unsubscribe = micInput.subscribe((frame) => {
+      samples.push({
+        pitchHz: frame.pitchHz,
+        volume: frame.volume,
+        brightness: frame.brightness ?? 0.4,
+      })
+    })
+    setCapturePhase('recording')
+    setSecondsLeft(CAPTURE_SECONDS)
+    const startedAt = performance.now()
+    const ticker = window.setInterval(() => {
+      setSecondsLeft(Math.max(0, CAPTURE_SECONDS - (performance.now() - startedAt) / 1000))
+    }, 100)
+    const timer = window.setTimeout(() => {
+      if (captureCancelRef.current) {
+        captureCancelRef.current()
+        captureCancelRef.current = null
+      }
+      micInput.stop()
+      actions.setMicStatus('idle')
+      setMicWaveform(null)
+      const result = analyzeUtterance(samples, (hz) => patternMapper.frequencyToPattern(hz))
+      setUtterance(result)
+      setSecondsLeft(0)
+      setCapturePhase('done')
+      sandRef.current?.scatter()
+    }, CAPTURE_SECONDS * 1000)
+    captureCancelRef.current = () => {
+      window.clearTimeout(timer)
+      window.clearInterval(ticker)
+      unsubscribe()
+    }
+  }, [micStatus, micInput, actions, patternMapper, resetLong])
+
+  // 长声音压缩录画：3~20 秒逐帧采集 → 重采样成 16 个时间切片 → 定格成年轮 / 多重曝光
+  const startLong = useCallback(async () => {
+    if (longCancelRef.current) return
+    if (captureCancelRef.current) {
+      captureCancelRef.current()
+      captureCancelRef.current = null
+    }
+    setCapturePhase('idle')
+    setUtterance(null)
+    setLongSlices(null)
+    if (micStatus !== 'listening') {
+      actions.setMicStatus('requesting')
+      try {
+        await micInput.start()
+      } catch (error) {
+        const denied = error instanceof DOMException && error.name === 'NotAllowedError'
+        actions.setMicStatus(denied ? 'denied' : 'unsupported')
+        return
+      }
+      if (inputModeRef.current !== 'mic') return
+      actions.setMicStatus('listening')
+    }
+    const samples: LongSoundSample[] = []
+    const unsubscribe = micInput.subscribe((frame) => {
+      samples.push({
+        pitchHz: frame.pitchHz,
+        volume: frame.volume,
+        brightness: frame.brightness ?? 0.4,
+      })
+    })
+    setLongPhase('recording')
+    setLongElapsed(0)
+    const startedAt = performance.now()
+    const finish = () => {
+      const duration = (performance.now() - startedAt) / 1000
+      if (duration < LONG_MIN_SECONDS) return
+      if (longCancelRef.current) {
+        longCancelRef.current()
+        longCancelRef.current = null
+      }
+      finishLongRef.current = null
+      micInput.stop()
+      actions.setMicStatus('idle')
+      setMicEnergy(null)
+      setMicWaveform(null)
+      const slices = compressTimeline(samples, (hz) => patternMapper.frequencyToPattern(hz))
+      if (!slices) {
+        setLongPhase('idle')
+        toast(t.longCapture.silent, 'warning')
+        return
+      }
+      let loudSum = 0
+      let loudCount = 0
+      for (const s of samples) {
+        if (s.volume > 0.05) {
+          loudSum += s.volume
+          loudCount += 1
+        }
+      }
+      const loudness = loudCount > 0 ? loudSum / loudCount : 0
+      setFrozenEnergy(0.05 + 0.12 * Math.min(1, loudness * 1.8))
+      setLongSlices(slices)
+      setLongDuration(duration)
+      setCompressionMode('rings')
+      setLongPhase('frozen')
+      sandRef.current?.scatter()
+    }
+    finishLongRef.current = finish
+    const ticker = window.setInterval(() => {
+      const elapsed = (performance.now() - startedAt) / 1000
+      if (elapsed >= LONG_MAX_SECONDS) finish()
+      else setLongElapsed(elapsed)
+    }, 100)
+    longCancelRef.current = () => {
+      window.clearInterval(ticker)
+      unsubscribe()
+    }
+  }, [micStatus, micInput, actions, patternMapper, toast])
+
+  const handleFinishLong = useCallback(() => {
+    finishLongRef.current?.()
+  }, [])
 
   const handleModeChange = (mode: InputMode) => {
     actions.setInputMode(mode)
@@ -159,7 +374,22 @@ export function StudioSection() {
               className={styles.canvas}
             />
             <div className={`mono ${styles.status}`} aria-live="polite">
-              {listening ? (
+              {longPhase === 'recording' ? (
+                <>
+                  <span className={styles.eq} aria-hidden="true">
+                    <span />
+                    <span />
+                    <span />
+                    <span />
+                  </span>
+                  <span className={styles.statusText}>{t.longCapture.statusRecording}</span>
+                </>
+              ) : longPhase === 'frozen' ? (
+                <>
+                  <SpeakerIcon size={13} className={styles.statusIcon} />
+                  <span className={styles.statusText}>{t.longCapture.statusFrozen}</span>
+                </>
+              ) : listening ? (
                 <>
                   <span className={styles.eq} aria-hidden="true">
                     <span />
@@ -168,6 +398,11 @@ export function StudioSection() {
                     <span />
                   </span>
                   <span className={styles.statusText}>{t.statusListening(description)}</span>
+                </>
+              ) : capturePhase === 'done' && utterance ? (
+                <>
+                  <SpeakerIcon size={13} className={styles.statusIcon} />
+                  <span className={styles.statusText}>{t.captureDone}</span>
                 </>
               ) : (
                 <>
@@ -208,8 +443,26 @@ export function StudioSection() {
             ) : (
               <MicPanel
                 status={micStatus}
-                onStart={startMic}
+                capturePhase={capturePhase}
+                secondsLeft={secondsLeft}
+                report={utterance?.report ?? null}
+                plateShape={plateShape}
+                longPhase={longPhase}
+                longElapsed={longElapsed}
+                longDuration={longDuration}
+                compressionMode={compressionMode}
+                onStart={handleRealtimeStart}
                 onStop={stopMic}
+                onCapture={() => {
+                  void startCapture()
+                }}
+                onPlateShapeChange={setPlateShape}
+                onStartLong={() => {
+                  void startLong()
+                }}
+                onFinishLong={handleFinishLong}
+                onCompressionModeChange={setCompressionMode}
+                onResetLong={resetLong}
                 onBackToSlider={() => handleModeChange('slider')}
               />
             )}

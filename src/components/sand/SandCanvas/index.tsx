@@ -1,4 +1,5 @@
 // 克拉尼驻波粒子沙盘：z(x,y) = a·cos(πnx)·cos(πmy) + b·cos(πmx)·cos(πny)，(x,y) ∈ [-1,1]²。
+// 长声音压缩画法：rings 把时间切片画成同心年轮，exposure 取最响瞬间叠印成复合方盘。
 // 场查找表仅在模态变化时重建；动画循环内只做双线性插值，不调用三角函数。
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
@@ -75,6 +76,7 @@ interface Sim {
   ctx: CanvasRenderingContext2D
   field: Field
   patternKey: string
+  circle: boolean
   theme: ParticleTheme
   energy: number
   interactive: boolean
@@ -97,7 +99,91 @@ interface Sim {
 }
 
 function patternKeyOf(pattern: PatternParams): string {
-  return `${pattern.n}-${pattern.m}-${pattern.a ?? 0}-${pattern.b ?? 0}`
+  const sec = pattern.secondary
+  const secKey = sec ? `${sec.n}.${sec.m}.${sec.weight}` : '0'
+  const slices = pattern.timelineSlices
+  const sliceKey = slices
+    ? slices.map((s) => `${s.n}.${s.m}.${s.a}.${s.b}.${s.weight}`).join('|')
+    : '0'
+  return `${pattern.n}-${pattern.m}-${pattern.a ?? 0}-${pattern.b ?? 0}-${pattern.plateShape ?? 'square'}-${secKey}-${pattern.compressionMode ?? 'live'}-${sliceKey}`
+}
+
+function isCirclePattern(pattern: PatternParams): boolean {
+  if (pattern.compressionMode === 'rings') return true
+  if (pattern.compressionMode === 'exposure') return false
+  return pattern.plateShape === 'circle'
+}
+
+type TimelineSlice = NonNullable<PatternParams['timelineSlices']>[number]
+
+function ringSliceZ(slice: TimelineSlice, r: number, theta: number): number {
+  const loud = 0.35 + 0.65 * slice.weight
+  return Math.cos(Math.PI * slice.m * r) * (slice.a * Math.cos(slice.n * theta) + slice.b) * loud
+}
+
+// 声音年轮：半径等分为 K 圈环带，第 i 片声纹画第 i 圈，
+// 切片中心处纯粹呈现本片花纹，环带交界用 smoothstep 平滑过渡
+function buildRingsField(slices: TimelineSlice[], amp: Float32Array): void {
+  const k = slices.length
+  for (let j = 0; j < GRID; j += 1) {
+    const y = -1 + (2 * j) / (GRID - 1)
+    for (let i = 0; i < GRID; i += 1) {
+      const x = -1 + (2 * i) / (GRID - 1)
+      const r = Math.sqrt(x * x + y * y)
+      if (r > 1) continue
+      const theta = Math.atan2(y, x)
+      const pos = r * k - 0.5
+      let i0 = Math.floor(pos)
+      let frac = pos - i0
+      if (i0 < 0) {
+        i0 = 0
+        frac = 0
+      } else if (i0 >= k - 1) {
+        i0 = k - 1
+        frac = 0
+      }
+      const i1 = Math.min(i0 + 1, k - 1)
+      const t = frac * frac * (3 - 2 * frac)
+      const z0 = ringSliceZ(slices[i0], r, theta)
+      const z1 = i1 === i0 ? z0 : ringSliceZ(slices[i1], r, theta)
+      amp[j * GRID + i] = Math.abs(z0 + (z1 - z0) * t)
+    }
+  }
+}
+
+// 多重曝光：取响度权重最高的前 3 个瞬间（弱于冠军 30% 的层丢弃，
+// 声音单薄时自然退化为 1~2 层），按权重叠成一张复合方盘
+function buildExposureField(slices: TimelineSlice[], amp: Float32Array): void {
+  const sorted = [...slices].sort((p, q) => q.weight - p.weight)
+  const top = sorted
+    .slice(0, 3)
+    .filter((s, idx) => idx === 0 || s.weight >= sorted[0].weight * 0.3)
+  let wSum = 0
+  for (const s of top) wSum += s.weight
+  const layers = top.map((s) => {
+    let b = s.b
+    if (s.n === s.m && s.a + b === 0) b = 1
+    return { n: s.n, m: s.m, a: s.a, b, w: (s.weight / wSum) * 1.8 }
+  })
+  const cosN = layers.map(() => new Float32Array(GRID))
+  const cosM = layers.map(() => new Float32Array(GRID))
+  for (let i = 0; i < GRID; i += 1) {
+    const t = -1 + (2 * i) / (GRID - 1)
+    for (let l = 0; l < layers.length; l += 1) {
+      cosN[l][i] = Math.cos(Math.PI * layers[l].n * t)
+      cosM[l][i] = Math.cos(Math.PI * layers[l].m * t)
+    }
+  }
+  for (let j = 0; j < GRID; j += 1) {
+    for (let i = 0; i < GRID; i += 1) {
+      let z = 0
+      for (let l = 0; l < layers.length; l += 1) {
+        const { a, b, w } = layers[l]
+        z += w * (a * cosN[l][i] * cosM[l][j] + b * cosM[l][i] * cosN[l][j])
+      }
+      amp[j * GRID + i] = Math.abs(z)
+    }
+  }
 }
 
 function buildField(pattern: PatternParams): Field {
@@ -107,22 +193,61 @@ function buildField(pattern: PatternParams): Field {
   let b = pattern.b ?? -1
   // n === m 且 a + b === 0 时方程恒为 0，改为同相叠加形成正交网格
   if (n === m && a + b === 0) b = 1
+  const sec = pattern.secondary
+  const n2 = sec ? Math.max(1, Math.round(sec.n)) : 0
+  const m2 = sec ? Math.max(1, Math.round(sec.m)) : 0
+  const w2 = sec ? sec.weight : 0
+  // 第二层 n === m 时反相叠加恒为 0，同样改同相
+  const sign2 = n2 === m2 ? 1 : -1
 
   const size = GRID * GRID
   const amp = new Float32Array(size)
   const dirX = new Float32Array(size)
   const dirY = new Float32Array(size)
-  const cosN = new Float32Array(GRID)
-  const cosM = new Float32Array(GRID)
-  for (let i = 0; i < GRID; i += 1) {
-    const t = -1 + (2 * i) / (GRID - 1)
-    cosN[i] = Math.cos(Math.PI * n * t)
-    cosM[i] = Math.cos(Math.PI * m * t)
-  }
-  for (let j = 0; j < GRID; j += 1) {
+
+  const slices = pattern.timelineSlices
+  if (pattern.compressionMode === 'rings' && slices && slices.length > 0) {
+    buildRingsField(slices, amp)
+  } else if (pattern.compressionMode === 'exposure' && slices && slices.length > 0) {
+    buildExposureField(slices, amp)
+  } else if (pattern.plateShape === 'circle') {
+    // 圆盘：放射花瓣 × 同心波纹，z(r,θ) = cos(πmr)·(a·cos(nθ) + b)，圆外置 0
+    for (let j = 0; j < GRID; j += 1) {
+      const y = -1 + (2 * j) / (GRID - 1)
+      for (let i = 0; i < GRID; i += 1) {
+        const x = -1 + (2 * i) / (GRID - 1)
+        const r = Math.sqrt(x * x + y * y)
+        if (r > 1) continue
+        const theta = Math.atan2(y, x)
+        let z = Math.cos(Math.PI * m * r) * (a * Math.cos(n * theta) + b)
+        if (sec) {
+          z += w2 * Math.cos(Math.PI * m2 * r) * (a * Math.cos(n2 * theta) + b)
+        }
+        amp[j * GRID + i] = Math.abs(z)
+      }
+    }
+  } else {
+    const cosN = new Float32Array(GRID)
+    const cosM = new Float32Array(GRID)
+    const cosN2 = new Float32Array(GRID)
+    const cosM2 = new Float32Array(GRID)
     for (let i = 0; i < GRID; i += 1) {
-      const z = a * cosN[i] * cosM[j] + b * cosM[i] * cosN[j]
-      amp[j * GRID + i] = Math.abs(z)
+      const t = -1 + (2 * i) / (GRID - 1)
+      cosN[i] = Math.cos(Math.PI * n * t)
+      cosM[i] = Math.cos(Math.PI * m * t)
+      if (sec) {
+        cosN2[i] = Math.cos(Math.PI * n2 * t)
+        cosM2[i] = Math.cos(Math.PI * m2 * t)
+      }
+    }
+    for (let j = 0; j < GRID; j += 1) {
+      for (let i = 0; i < GRID; i += 1) {
+        let z = a * cosN[i] * cosM[j] + b * cosM[i] * cosN[j]
+        if (sec) {
+          z += w2 * (cosN2[i] * cosM2[j] + sign2 * cosM2[i] * cosN2[j])
+        }
+        amp[j * GRID + i] = Math.abs(z)
+      }
     }
   }
   // 迁移方向 = -∇amp（中央差分），归一化后供粒子向波节线漂移
@@ -150,8 +275,15 @@ function seedParticles(sim: Sim): void {
   const p = sim.particles
   for (let i = 0; i < sim.count; i += 1) {
     const o = i * 4
-    p[o] = (Math.random() * 2 - 1) * BOARD
-    p[o + 1] = (Math.random() * 2 - 1) * BOARD
+    if (sim.circle) {
+      const r = BOARD * Math.sqrt(Math.random())
+      const theta = Math.random() * Math.PI * 2
+      p[o] = r * Math.cos(theta)
+      p[o + 1] = r * Math.sin(theta)
+    } else {
+      p[o] = (Math.random() * 2 - 1) * BOARD
+      p[o + 1] = (Math.random() * 2 - 1) * BOARD
+    }
     p[o + 2] = 0
     p[o + 3] = 0
   }
@@ -224,19 +356,35 @@ function stepSim(sim: Sim): void {
     vy *= damp
     x += vx
     y += vy
-    if (x > BOARD) {
-      x = BOARD
-      vx *= -0.5
-    } else if (x < -BOARD) {
-      x = -BOARD
-      vx *= -0.5
-    }
-    if (y > BOARD) {
-      y = BOARD
-      vy *= -0.5
-    } else if (y < -BOARD) {
-      y = -BOARD
-      vy *= -0.5
+    if (sim.circle) {
+      const r2 = x * x + y * y
+      if (r2 > BOARD * BOARD) {
+        const r = Math.sqrt(r2)
+        const ux = x / r
+        const uy = y / r
+        x = ux * BOARD
+        y = uy * BOARD
+        const vn = vx * ux + vy * uy
+        if (vn > 0) {
+          vx -= 1.5 * vn * ux
+          vy -= 1.5 * vn * uy
+        }
+      }
+    } else {
+      if (x > BOARD) {
+        x = BOARD
+        vx *= -0.5
+      } else if (x < -BOARD) {
+        x = -BOARD
+        vx *= -0.5
+      }
+      if (y > BOARD) {
+        y = BOARD
+        vy *= -0.5
+      } else if (y < -BOARD) {
+        y = -BOARD
+        vy *= -0.5
+      }
     }
     p[o] = x
     p[o + 1] = y
@@ -378,6 +526,7 @@ export const SandCanvas = forwardRef<SandCanvasHandle, SandCanvasProps>(function
       ctx,
       field: buildField(init.pattern),
       patternKey: patternKeyOf(init.pattern),
+      circle: isCirclePattern(init.pattern),
       theme: init.theme,
       energy: init.energy,
       interactive: init.interactive,
@@ -469,6 +618,11 @@ export const SandCanvas = forwardRef<SandCanvasHandle, SandCanvasProps>(function
     if (!sim || sim.patternKey === key) return
     sim.patternKey = key
     sim.field = buildField(pattern)
+    const circle = isCirclePattern(pattern)
+    if (circle !== sim.circle) {
+      sim.circle = circle
+      seedParticles(sim)
+    }
     if (sim.reduced) settle(sim)
     else cleanDraw(sim)
   }, [key, pattern])
@@ -520,7 +674,8 @@ export const SandCanvas = forwardRef<SandCanvasHandle, SandCanvasProps>(function
     '--energy': clampedEnergy,
   } as CSSProperties
 
-  const classes = [styles.canvas, interactive && styles.interactive, className]
+  const isCircle = isCirclePattern(pattern)
+  const classes = [styles.canvas, isCircle && styles.circle, interactive && styles.interactive, className]
     .filter(Boolean)
     .join(' ')
 
@@ -535,23 +690,34 @@ export const SandCanvas = forwardRef<SandCanvasHandle, SandCanvasProps>(function
       <canvas ref={canvasRef} className={styles.surface} aria-hidden="true" />
       <div className={styles.glow} aria-hidden="true" />
       <svg className={styles.grid} viewBox="0 0 100 100" aria-hidden="true">
-        <line x1="50" y1="4" x2="50" y2="96" strokeDasharray="1 4" />
-        <line x1="4" y1="50" x2="96" y2="50" strokeDasharray="1 4" />
-        {Array.from({ length: 9 }, (_, i) => {
-          const p = (i + 1) * 10
-          return (
-            <g key={p}>
-              <line x1={p} y1="0" x2={p} y2="1.6" />
-              <line x1={p} y1="98.4" x2={p} y2="100" />
-              <line x1="0" y1={p} x2="1.6" y2={p} />
-              <line x1="98.4" y1={p} x2="100" y2={p} />
-            </g>
-          )
-        })}
-        <path d="M1 6 V1 H6" className={styles.corner} />
-        <path d="M94 1 H99 V6" className={styles.corner} />
-        <path d="M99 94 V99 H94" className={styles.corner} />
-        <path d="M6 99 H1 V94" className={styles.corner} />
+        {isCircle ? (
+          <>
+            <circle cx="50" cy="50" r="48.5" className={styles.rim} />
+            <circle cx="50" cy="50" r="24" strokeDasharray="1 4" />
+            <line x1="50" y1="1.5" x2="50" y2="98.5" strokeDasharray="1 4" />
+            <line x1="1.5" y1="50" x2="98.5" y2="50" strokeDasharray="1 4" />
+          </>
+        ) : (
+          <>
+            <line x1="50" y1="4" x2="50" y2="96" strokeDasharray="1 4" />
+            <line x1="4" y1="50" x2="96" y2="50" strokeDasharray="1 4" />
+            {Array.from({ length: 9 }, (_, i) => {
+              const p = (i + 1) * 10
+              return (
+                <g key={p}>
+                  <line x1={p} y1="0" x2={p} y2="1.6" />
+                  <line x1={p} y1="98.4" x2={p} y2="100" />
+                  <line x1="0" y1={p} x2="1.6" y2={p} />
+                  <line x1="98.4" y1={p} x2="100" y2={p} />
+                </g>
+              )
+            })}
+            <path d="M1 6 V1 H6" className={styles.corner} />
+            <path d="M94 1 H99 V6" className={styles.corner} />
+            <path d="M99 94 V99 H94" className={styles.corner} />
+            <path d="M6 99 H1 V94" className={styles.corner} />
+          </>
+        )}
         <circle cx="50" cy="50" r="0.9" className={styles.centerDot} />
       </svg>
       <span className={`mono ${styles.plateCaption}`}>{copy.sand.plateCaption}</span>
