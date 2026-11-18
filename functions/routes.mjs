@@ -70,6 +70,10 @@ export function application({ db, storage, BackendError }) {
       if (!num(p.b, -2, 2)) fail('invalid_input', 400)
       out.b = p.b
     }
+    if (p.twist !== undefined) {
+      if (!num(p.twist, -1, 1)) fail('invalid_input', 400)
+      out.twist = p.twist
+    }
     if (p.plateShape !== undefined) {
       if (!SHAPES.includes(p.plateShape)) fail('invalid_input', 400)
       out.plateShape = p.plateShape

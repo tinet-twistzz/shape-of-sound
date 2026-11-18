@@ -10,6 +10,7 @@ import { QuestionIcon, SpeakerIcon } from '@/components/ui/icons'
 import { useToast } from '@/components/ui/Toast/toastContext'
 import { copy } from '@/content/copy'
 import { useServices } from '@/services/serviceContext'
+import { centroidToB } from '@/services/real/chladniPatternMapper'
 import { GalleryError } from '@/services/real/galleryService'
 import { localGallery } from '@/services/real/localGallery'
 import { useAppActions, useAppState } from '@/store/appStateContext'
@@ -68,6 +69,7 @@ export function StudioSection() {
 
   const [micEnergy, setMicEnergy] = useState<number | null>(null)
   const [micWaveform, setMicWaveform] = useState<Float32Array | null>(null)
+  const [micCentroid, setMicCentroid] = useState<number | null>(null)
   const [capturePhase, setCapturePhase] = useState<CapturePhase>('idle')
   const [secondsLeft, setSecondsLeft] = useState(CAPTURE_SECONDS)
   const [utterance, setUtterance] = useState<UtteranceResult | null>(null)
@@ -95,6 +97,15 @@ export function StudioSection() {
     inputModeRef.current = inputMode
   }, [inputMode])
 
+  // 人声路径统一走动态频段映射（85–650Hz 舒展到全阶模态），mock 映射器无此方法时退回扫频映射
+  const mapVoicePitch = useCallback(
+    (hz: number): PatternParams =>
+      patternMapper.voiceFrequencyToPattern
+        ? patternMapper.voiceFrequencyToPattern(hz)
+        : patternMapper.frequencyToPattern(hz),
+    [patternMapper],
+  )
+
   const pattern = useMemo((): PatternParams => {
     if (inputMode === 'mic' && longSlices) {
       return {
@@ -108,8 +119,14 @@ export function StudioSection() {
       }
     }
     if (inputMode === 'mic' && utterance) return { ...utterance.pattern, plateShape }
+    if (inputMode === 'mic') {
+      // 实时哼唱：音高定模态，当前帧频谱质心微调耦合比，不同元音呈现不同花瓣开合
+      const base = mapVoicePitch(frequencyHz)
+      const b = micCentroid !== null ? centroidToB(micCentroid) : base.b
+      return { ...base, b, plateShape }
+    }
     return { ...patternMapper.frequencyToPattern(frequencyHz), plateShape }
-  }, [inputMode, longSlices, compressionMode, utterance, plateShape, patternMapper, frequencyHz])
+  }, [inputMode, longSlices, compressionMode, utterance, plateShape, patternMapper, frequencyHz, mapVoicePitch, micCentroid])
   const description = describeFrequency(frequencyHz)
   const energy =
     inputMode === 'mic' && longSlices
@@ -131,6 +148,7 @@ export function StudioSection() {
       if (frame.pitchHz !== null) actions.setFrequency(Math.round(frame.pitchHz))
       setMicEnergy(frame.volume)
       setMicWaveform(frame.waveform)
+      setMicCentroid(frame.centroid ?? null)
       const now = performance.now()
       const dt = Math.min(0.1, (now - voiceLastAtRef.current) / 1000)
       voiceLastAtRef.current = now
@@ -155,6 +173,7 @@ export function StudioSection() {
     actions.setMicStatus('idle')
     setMicEnergy(null)
     setMicWaveform(null)
+    setMicCentroid(null)
   }, [micInput, actions])
 
   const resetVoiceSand = useCallback(() => {
@@ -250,6 +269,8 @@ export function StudioSection() {
         pitchHz: frame.pitchHz,
         volume: frame.volume,
         brightness: frame.brightness ?? 0.4,
+        centroid: frame.centroid,
+        harmonicRatio: frame.harmonicRatio,
       })
     })
     setCapturePhase('recording')
@@ -266,7 +287,7 @@ export function StudioSection() {
       micInput.stop()
       actions.setMicStatus('idle')
       setMicWaveform(null)
-      const result = analyzeUtterance(samples, (hz) => patternMapper.frequencyToPattern(hz))
+      const result = analyzeUtterance(samples, mapVoicePitch)
       setUtterance(result)
       setSecondsLeft(0)
       setCapturePhase('done')
@@ -277,7 +298,7 @@ export function StudioSection() {
       window.clearInterval(ticker)
       unsubscribe()
     }
-  }, [micStatus, micInput, actions, patternMapper, resetLong, resetVoiceSand])
+  }, [micStatus, micInput, actions, mapVoicePitch, resetLong, resetVoiceSand])
 
   // 长声音压缩录画：3~20 秒逐帧采集 → 重采样成 16 个时间切片 → 定格成年轮 / 多重曝光
   const startLong = useCallback(async () => {
@@ -308,6 +329,8 @@ export function StudioSection() {
         pitchHz: frame.pitchHz,
         volume: frame.volume,
         brightness: frame.brightness ?? 0.4,
+        centroid: frame.centroid,
+        harmonicRatio: frame.harmonicRatio,
       })
     })
     setLongPhase('recording')
@@ -325,7 +348,7 @@ export function StudioSection() {
       actions.setMicStatus('idle')
       setMicEnergy(null)
       setMicWaveform(null)
-      const slices = compressTimeline(samples, (hz) => patternMapper.frequencyToPattern(hz))
+      const slices = compressTimeline(samples, mapVoicePitch)
       if (!slices) {
         setLongPhase('idle')
         toast(t.longCapture.silent, 'warning')
@@ -357,7 +380,7 @@ export function StudioSection() {
       window.clearInterval(ticker)
       unsubscribe()
     }
-  }, [micStatus, micInput, actions, patternMapper, toast, resetVoiceSand])
+  }, [micStatus, micInput, actions, mapVoicePitch, toast, resetVoiceSand])
 
   const handleFinishLong = useCallback(() => {
     finishLongRef.current?.()

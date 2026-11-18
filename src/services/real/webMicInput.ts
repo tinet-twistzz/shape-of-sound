@@ -11,6 +11,10 @@ const PITCH_CLARITY = 0.5
 const MEDIAN_WINDOW = 5
 const SMOOTH_ALPHA = 0.3
 const BRIGHTNESS_CUTOFF_HZ = 2000
+const CENTROID_MIN_HZ = 100
+const CENTROID_MAX_HZ = 3500
+const HARMONIC_TOP_HZ = 5000
+const FEATURE_ALPHA = 0.35
 
 function getAudioContextCtor(): typeof AudioContext | null {
   if (typeof window === 'undefined') return null
@@ -103,6 +107,61 @@ function computeBrightness(freqData: Uint8Array, sampleRate: number): number {
   return total > 0 ? high / total : 0
 }
 
+interface SpectralFeatures {
+  centroid: number
+  harmonicRatio: number
+}
+
+/** 复用同一份 freqData 提取质心与谐波丰度，无额外 FFT；仅标量循环，无逐帧数组分配 */
+function computeSpectralFeatures(
+  freqData: Uint8Array,
+  sampleRate: number,
+  pitchHz: number | null,
+): SpectralFeatures {
+  const binHz = sampleRate / 2 / freqData.length
+  const minBin = Math.max(1, Math.floor(CENTROID_MIN_HZ / binHz))
+  const maxBin = Math.min(freqData.length - 1, Math.ceil(CENTROID_MAX_HZ / binHz))
+  let weighted = 0
+  let total = 0
+  let peakBin = -1
+  let peakEnergy = 0
+  for (let i = minBin; i <= maxBin; i += 1) {
+    const magnitude = freqData[i] / 255
+    const e = magnitude * magnitude
+    weighted += e * i
+    total += e
+    if (i * binHz <= 1000 && e > peakEnergy) {
+      peakEnergy = e
+      peakBin = i
+    }
+  }
+  const centroidHz = total > 1e-6 ? (weighted / total) * binHz : CENTROID_MIN_HZ
+  const centroid = Math.min(
+    1,
+    Math.max(0, (centroidHz - CENTROID_MIN_HZ) / (CENTROID_MAX_HZ - CENTROID_MIN_HZ)),
+  )
+
+  // 基频带（±15%）之外的谐波能量占比：口哨接近 0，元音随泛音丰度升高
+  const f0 = pitchHz ?? (peakBin >= 0 ? peakBin * binHz : 0)
+  if (f0 <= 0 || peakEnergy <= 1e-6) return { centroid, harmonicRatio: 0 }
+  const fundLow = Math.max(1, Math.floor((f0 * 0.85) / binHz))
+  const fundHigh = Math.min(freqData.length - 1, Math.ceil((f0 * 1.15) / binHz))
+  const harmLow = Math.max(fundHigh + 1, Math.floor((f0 * 1.4) / binHz))
+  const harmHigh = Math.min(freqData.length - 1, Math.ceil(HARMONIC_TOP_HZ / binHz))
+  let fundEnergy = 0
+  for (let i = fundLow; i <= fundHigh; i += 1) {
+    const magnitude = freqData[i] / 255
+    fundEnergy += magnitude * magnitude
+  }
+  let harmEnergy = 0
+  for (let i = harmLow; i <= harmHigh; i += 1) {
+    const magnitude = freqData[i] / 255
+    harmEnergy += magnitude * magnitude
+  }
+  const sum = fundEnergy + harmEnergy
+  return { centroid, harmonicRatio: sum > 1e-6 ? harmEnergy / sum : 0 }
+}
+
 export function createWebMicInput(): MicInput {
   const listeners = new Set<MicListener>()
   let ctx: AudioContext | null = null
@@ -115,10 +174,14 @@ export function createWebMicInput(): MicInput {
   let startPromise: Promise<void> | null = null
   const pitchHistory: number[] = []
   let smoothedPitch: number | null = null
+  let smoothedCentroid: number | null = null
+  let smoothedHarmonic: number | null = null
 
   function resetPitch() {
     pitchHistory.length = 0
     smoothedPitch = null
+    smoothedCentroid = null
+    smoothedHarmonic = null
   }
 
   function releaseStream(mediaStream: MediaStream) {
@@ -193,11 +256,23 @@ export function createWebMicInput(): MicInput {
           resetPitch()
         }
 
+        const features = computeSpectralFeatures(freqData, audioCtx.sampleRate, pitchHz)
+        smoothedCentroid =
+          smoothedCentroid === null
+            ? features.centroid
+            : smoothedCentroid + FEATURE_ALPHA * (features.centroid - smoothedCentroid)
+        smoothedHarmonic =
+          smoothedHarmonic === null
+            ? features.harmonicRatio
+            : smoothedHarmonic + FEATURE_ALPHA * (features.harmonicRatio - smoothedHarmonic)
+
         const frame: MicFrame = {
           pitchHz,
           volume,
           waveform,
           brightness: computeBrightness(freqData, audioCtx.sampleRate),
+          centroid: smoothedCentroid,
+          harmonicRatio: smoothedHarmonic,
         }
         listeners.forEach((listener) => listener(frame))
         rafId = requestAnimationFrame(tick)

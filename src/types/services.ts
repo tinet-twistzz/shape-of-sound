@@ -29,6 +29,10 @@ export interface MicFrame {
   waveform: Float32Array
   // 0–1，高频能量占比（音色明亮度）；可选以兼容未提供该字段的数据源
   brightness?: number
+  // 0–1，100–3500Hz 核心区归一化频谱质心（音色温润 vs 清冽）；可选以兼容 mock
+  centroid?: number
+  // 0–1，基频之外的谐波能量占比（泛音丰度，区分同音高的不同元音 / 口哨）；可选以兼容 mock
+  harmonicRatio?: number
 }
 
 export type MicListener = (frame: MicFrame) => void
@@ -45,6 +49,8 @@ export interface QuizService {
 
 export interface PatternMapper {
   frequencyToPattern(frequencyHz: number): PatternParams
+  /** 人声活跃频段（约 85–650Hz）非线性舒展到全阶模态；可选以兼容 mock */
+  voiceFrequencyToPattern?(frequencyHz: number): PatternParams
 }
 
 export interface ArtworkExporter {

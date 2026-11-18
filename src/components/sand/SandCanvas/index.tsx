@@ -158,7 +158,7 @@ function patternKeyOf(pattern: PatternParams): string {
   const sliceKey = slices
     ? slices.map((s) => `${s.n}.${s.m}.${s.a}.${s.b}.${s.weight}`).join('|')
     : '0'
-  return `${pattern.n}-${pattern.m}-${pattern.a ?? 0}-${pattern.b ?? 0}-${pattern.plateShape ?? 'square'}-${secKey}-${pattern.compressionMode ?? 'live'}-${sliceKey}`
+  return `${pattern.n}-${pattern.m}-${pattern.a ?? 0}-${pattern.b ?? 0}-${pattern.plateShape ?? 'square'}-${secKey}-${pattern.compressionMode ?? 'live'}-${sliceKey}-${(pattern.twist ?? 0).toFixed(2)}`
 }
 
 // 声音年轮固定按圆盘处理；其余模式（含多重曝光）严格服从所选盘形
@@ -249,8 +249,40 @@ function buildRotSymField(
   a: number,
   b: number,
   sec: { n2: number; m2: number; w2: number } | null,
+  twist: number,
 ): void {
   const triangle = shape === 'triangle'
+  // twist 非 0：把三列平面波整体旋转一个相位角，节线呈涡旋状（建表路径不可分离，逐格直接求值）
+  if (twist !== 0) {
+    const phi = twist * 0.6
+    const cp = Math.cos(phi)
+    const sp = Math.sin(phi)
+    const kN = Math.PI * n
+    const kM = Math.PI * m
+    const kN2 = sec ? Math.PI * sec.n2 : 0
+    const kM2 = sec ? Math.PI * sec.m2 : 0
+    for (let j = 0; j < GRID; j += 1) {
+      const y = -1 + (2 * j) / (GRID - 1)
+      for (let i = 0; i < GRID; i += 1) {
+        const x = -1 + (2 * i) / (GRID - 1)
+        if (plateSignedDist(x, y, shape) > 0) continue
+        const rx = x * cp - y * sp
+        const ry = x * sp + y * cp
+        const u = triangle ? ry : rx
+        const v = triangle ? rx : ry
+        const zn = Math.cos(kN * u) + 2 * Math.cos((kN * u) / 2) * Math.cos(kN * SQRT3_2 * v)
+        const zm = Math.cos(kM * u) + 2 * Math.cos((kM * u) / 2) * Math.cos(kM * SQRT3_2 * v)
+        let z = a * zn + b * zm
+        if (sec) {
+          const zn2 = Math.cos(kN2 * u) + 2 * Math.cos((kN2 * u) / 2) * Math.cos(kN2 * SQRT3_2 * v)
+          const zm2 = Math.cos(kM2 * u) + 2 * Math.cos((kM2 * u) / 2) * Math.cos(kM2 * SQRT3_2 * v)
+          z += sec.w2 * (a * zn2 + b * zm2)
+        }
+        amp[j * GRID + i] = Math.abs(z) / 3
+      }
+    }
+    return
+  }
   const freqs = sec ? [n, m, sec.n2, sec.m2] : [n, m]
   const cu = freqs.map(() => new Float32Array(GRID))
   const ch = freqs.map(() => new Float32Array(GRID))
@@ -297,6 +329,7 @@ function buildField(pattern: PatternParams): Field {
   const w2 = sec ? sec.weight : 0
   // 第二层 n === m 时反相叠加恒为 0，同样改同相
   const sign2 = n2 === m2 ? 1 : -1
+  const twist = pattern.twist ?? 0
 
   const size = GRID * GRID
   const amp = new Float32Array(size)
@@ -311,13 +344,14 @@ function buildField(pattern: PatternParams): Field {
     buildExposureField(slices, amp)
   } else if (shape === 'circle') {
     // 圆盘：放射花瓣 × 同心波纹，z(r,θ) = cos(πmr)·(a·cos(nθ) + b)，圆外置 0
+    // twist 非 0 时角度相位随半径偏转，花瓣旋成 S 型涡旋；twist 为 0 与原式完全一致
     for (let j = 0; j < GRID; j += 1) {
       const y = -1 + (2 * j) / (GRID - 1)
       for (let i = 0; i < GRID; i += 1) {
         const x = -1 + (2 * i) / (GRID - 1)
         const r = Math.sqrt(x * x + y * y)
         if (r > 1) continue
-        const theta = Math.atan2(y, x)
+        const theta = Math.atan2(y, x) + twist * 0.85 * r
         let z = Math.cos(Math.PI * m * r) * (a * Math.cos(n * theta) + b)
         if (sec) {
           z += w2 * Math.cos(Math.PI * m2 * r) * (a * Math.cos(n2 * theta) + b)
@@ -326,13 +360,17 @@ function buildField(pattern: PatternParams): Field {
       }
     }
   } else if (shape === 'hexagon' || shape === 'triangle') {
-    buildRotSymField(amp, shape, n, m, a, b, sec ? { n2, m2, w2 } : null)
+    buildRotSymField(amp, shape, n, m, a, b, sec ? { n2, m2, w2 } : null, twist)
   } else {
     // 方盘：正交驻波叠加
     const cosN = new Float32Array(GRID)
     const cosM = new Float32Array(GRID)
     const cosN2 = new Float32Array(GRID)
     const cosM2 = new Float32Array(GRID)
+    // twist 非 0 时混入自由板反对称奇函数项 sin(πnx)sin(πmy) − sin(πmx)sin(πny)，
+    // 打破四象限镜像，呈四叶风车 / S 型涡旋节线；twist 为 0 时该项恒不叠加
+    const sinN = twist !== 0 ? new Float32Array(GRID) : null
+    const sinM = twist !== 0 ? new Float32Array(GRID) : null
     for (let i = 0; i < GRID; i += 1) {
       const t = -1 + (2 * i) / (GRID - 1)
       cosN[i] = Math.cos(Math.PI * n * t)
@@ -341,12 +379,19 @@ function buildField(pattern: PatternParams): Field {
         cosN2[i] = Math.cos(Math.PI * n2 * t)
         cosM2[i] = Math.cos(Math.PI * m2 * t)
       }
+      if (sinN && sinM) {
+        sinN[i] = Math.sin(Math.PI * n * t)
+        sinM[i] = Math.sin(Math.PI * m * t)
+      }
     }
     for (let j = 0; j < GRID; j += 1) {
       for (let i = 0; i < GRID; i += 1) {
         let z = a * cosN[i] * cosM[j] + b * cosM[i] * cosN[j]
         if (sec) {
           z += w2 * (cosN2[i] * cosM2[j] + sign2 * cosM2[i] * cosN2[j])
+        }
+        if (sinN && sinM) {
+          z += twist * (sinN[i] * sinM[j] - sinM[i] * sinN[j])
         }
         amp[j * GRID + i] = Math.abs(z)
       }
@@ -818,13 +863,15 @@ export const SandCanvas = forwardRef<SandCanvasHandle, SandCanvasProps>(function
     sim.patternKey = key
     sim.field = buildField(pattern)
     const shape = effectiveShape(pattern)
-    if (shape !== sim.shape) {
+    const shapeChanged = shape !== sim.shape
+    if (shapeChanged) {
       sim.shape = shape
       buildPlatePath(sim)
       seedParticles(sim)
     }
     if (sim.reduced) settle(sim)
-    else cleanDraw(sim)
+    // 盘形未变时不清屏重绘：保留粒子游向新波节线的自然拖尾，避免逐帧 cleanDraw 闪烁
+    else if (shapeChanged) cleanDraw(sim)
   }, [key, pattern])
 
   useEffect(() => {

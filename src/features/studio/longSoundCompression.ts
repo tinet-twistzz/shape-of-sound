@@ -1,3 +1,4 @@
+import { centroidToB } from '@/services/real/chladniPatternMapper'
 import type { PatternParams } from '@/types/domain'
 
 export type TimelineSlice = NonNullable<PatternParams['timelineSlices']>[number]
@@ -6,15 +7,13 @@ export interface LongSoundSample {
   pitchHz: number | null
   volume: number
   brightness: number
+  centroid?: number
+  harmonicRatio?: number
 }
 
 export const LONG_MIN_SECONDS = 3
 export const LONG_MAX_SECONDS = 20
 export const TIMELINE_SLICE_COUNT = 16
-
-function clamp01(value: number): number {
-  return Math.min(1, Math.max(0, value))
-}
 
 function round3(value: number): number {
   return Math.round(value * 1000) / 1000
@@ -41,27 +40,30 @@ export function compressTimeline(
     let pitchSum = 0
     let voiced = 0
     let volSum = 0
-    let brightSum = 0
-    let brightWeight = 0
+    let centroidSum = 0
+    let centroidWeight = 0
     for (let i = start; i < end && i < samples.length; i += 1) {
       const s = samples[i]
       volSum += s.volume
       if (s.pitchHz !== null && s.volume > 0.04) {
         pitchSum += s.pitchHz
         voiced += 1
-        brightSum += s.brightness * s.volume
-        brightWeight += s.volume
+        centroidSum += (s.centroid ?? s.brightness * 0.5) * s.volume
+        centroidWeight += s.volume
       }
     }
     if (voiced >= 2) {
       voicedTotal += voiced
       const base = mapPitch(pitchSum / voiced)
-      const brightness = brightWeight > 0 ? brightSum / brightWeight : 0.4
+      const centroid = centroidWeight > 0 ? centroidSum / centroidWeight : 0.2
+      // 质心驱动 b 的正负交替，并把幅值推离中性区，拉大年轮 / 曝光各层的几何反差
+      const b0 = centroidToB(centroid)
+      const b = (b0 >= 0 ? 1 : -1) * (0.4 + Math.abs(b0) * 0.7)
       raw.push({
         n: Math.max(1, Math.round(base.n)),
         m: Math.max(1, Math.round(base.m)),
         a: 1,
-        b: round3(-(0.35 + clamp01(brightness) * 1.1)),
+        b: round3(b),
         weight: volSum / (end - start),
       })
     } else {

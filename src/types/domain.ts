@@ -21,6 +21,8 @@ export interface PatternParams {
   plateShape?: PlateShape
   /** 语气起伏明显时叠加的第二层花纹 */
   secondary?: { n: number; m: number; weight: number }
+  /** 反对称扭转度 [-1, 1]：0 为纯偶函数镜像驻波，非 0 混入奇函数项形成风车 / 涡旋节线 */
+  twist?: number
   compressionMode?: CompressionMode
   /** 长声音按时间压缩抽样后的声纹序列（最多 24 片），weight 为该时刻的响度权重 0–1 */
   timelineSlices?: Array<{ n: number; m: number; a: number; b: number; weight: number }>
