@@ -39,9 +39,7 @@ export function FrequencySlider({ value, onChange, onCommit, className }: Freque
       className={classes}
       onPointerUp={commit}
       onPointerCancel={commit}
-      onTouchEnd={commit}
       onKeyUp={commit}
-      onBlur={commit}
     >
       <div className={styles.head}>
         <label className={styles.label} htmlFor={id}>

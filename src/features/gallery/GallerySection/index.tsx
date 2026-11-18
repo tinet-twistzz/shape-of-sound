@@ -176,10 +176,6 @@ export function GallerySection() {
                   value: <Tag tone={pitch.tone}>{pitch.label}</Tag>,
                 },
                 { label: copy.sections.gallery.rowPattern, value: selected.patternName },
-                {
-                  label: copy.sections.gallery.rowMode,
-                  value: `(n=${selected.pattern.n}, m=${selected.pattern.m})`,
-                },
               ]}
               note={selected.description}
             />

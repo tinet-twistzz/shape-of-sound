@@ -31,6 +31,8 @@ export interface AppState {
   quiz: QuizState
   studio: StudioState
   principle: PrincipleState
+  /** 展厅刷新版本号：工坊发布/收藏后自增，驱动艺术展厅重新拉取 */
+  galleryVersion: number
 }
 
 export interface AppActions {
@@ -48,6 +50,7 @@ export interface AppActions {
   openPrinciple(chapterId?: string): void
   closePrinciple(): void
   setCurrentSection(section: SectionId): void
+  refreshGallery(): void
 }
 
 export const AppStateContext = createContext<AppState | null>(null)

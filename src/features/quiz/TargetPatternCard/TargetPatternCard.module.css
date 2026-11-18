@@ -54,6 +54,7 @@
 }
 
 .thumb {
+  width: min(250px, 100%);
   max-width: 100%;
   filter: drop-shadow(0 0 14px rgba(243, 201, 105, 0.25));
   animation: pattern-in var(--duration-reveal) var(--ease-settle);

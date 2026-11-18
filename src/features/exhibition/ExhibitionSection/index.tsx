@@ -9,6 +9,7 @@ import { useScrollTo } from '@/hooks/useScrollTo'
 import { localGallery } from '@/services/real/localGallery'
 import type { LocalArtwork } from '@/services/real/localGallery'
 import { useServices } from '@/services/serviceContext'
+import { useAppState } from '@/store/appStateContext'
 import type { ExhibitionArtwork } from '@/types/services'
 
 import { ArtworkCard } from '../ArtworkCard'
@@ -28,6 +29,7 @@ type LoadStatus = 'loading' | 'ready' | 'error'
 /** HALL 04 · 艺术展厅：公共展厅（云端）与我的展厅（本机 IndexedDB） */
 export function ExhibitionSection() {
   const { galleryService } = useServices()
+  const { galleryVersion } = useAppState()
   const toast = useToast()
   const scrollTo = useScrollTo()
 
@@ -68,6 +70,13 @@ export function ExhibitionSection() {
     if (tab === 'public') void loadPublic()
     else void loadMine()
   }, [tab, loadPublic, loadMine])
+
+  // 工坊发布/收藏后 galleryVersion 自增，两个展厅都重新拉取，确保新作品立即可见
+  useEffect(() => {
+    if (galleryVersion === 0) return
+    void loadPublic()
+    void loadMine()
+  }, [galleryVersion, loadPublic, loadMine])
 
   const mineUrls = useMemo(
     () => new Map(records.map((r) => [r.id, URL.createObjectURL(r.image)])),

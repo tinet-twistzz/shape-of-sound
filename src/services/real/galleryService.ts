@@ -114,8 +114,11 @@ export const galleryService: GalleryService = {
     ) {
       throw new GalleryError('invalid_response', 0)
     }
-    await putFile(created.imageUpload.signedUrl, image, 'image/webp')
-    await putFile(created.stateUpload.signedUrl, state, 'application/octet-stream')
+    // 两个签名 URL 同在创建时签发、有效期约 60s；并行上传缩短总耗时，避免慢网下第二个 token 过期
+    await Promise.all([
+      putFile(created.imageUpload.signedUrl, image, 'image/webp'),
+      putFile(created.stateUpload.signedUrl, state, 'application/octet-stream'),
+    ])
     const done = await requestJson(`${API}/artworks/${created.id}/complete`, { method: 'POST' })
     if (!isRecord(done) || done.status !== 'ready') {
       throw new GalleryError('complete_failed', 0)

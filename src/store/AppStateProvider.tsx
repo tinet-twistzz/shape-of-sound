@@ -13,6 +13,7 @@ const initialState: AppState = {
   quiz: { index: 0, selectedSoundId: null, result: null, collectedIds: [] },
   studio: { inputMode: 'slider', frequencyHz: 440, theme: 'gold', author: '', micStatus: 'idle' },
   principle: { open: false, chapterId: null },
+  galleryVersion: 0,
 }
 
 type Action =
@@ -30,6 +31,7 @@ type Action =
   | { type: 'OPEN_PRINCIPLE'; chapterId: string | null }
   | { type: 'CLOSE_PRINCIPLE' }
   | { type: 'SET_CURRENT_SECTION'; section: SectionId }
+  | { type: 'REFRESH_GALLERY' }
 
 function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
@@ -82,6 +84,8 @@ function reducer(state: AppState, action: Action): AppState {
       return state.currentSection === action.section
         ? state
         : { ...state, currentSection: action.section }
+    case 'REFRESH_GALLERY':
+      return { ...state, galleryVersion: state.galleryVersion + 1 }
   }
 }
 
@@ -111,6 +115,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'OPEN_PRINCIPLE', chapterId: chapterId ?? null }),
       closePrinciple: () => dispatch({ type: 'CLOSE_PRINCIPLE' }),
       setCurrentSection: (section) => dispatch({ type: 'SET_CURRENT_SECTION', section }),
+      refreshGallery: () => dispatch({ type: 'REFRESH_GALLERY' }),
     }),
     [quizService],
   )

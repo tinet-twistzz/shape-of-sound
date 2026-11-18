@@ -1,4 +1,4 @@
-import { PatternThumbnail } from '@/components/sand/PatternThumbnail'
+import { SandCanvas } from '@/components/sand/SandCanvas'
 import { SoundExhibitIcon } from '@/components/ui/icons'
 import { copy } from '@/content/copy'
 import type { PatternParams, SoundPreset } from '@/types/domain'
@@ -25,13 +25,14 @@ export function TargetPatternCard({
     <figure className={styles.frame}>
       <div className={styles.edge}>
         <div className={styles.mat}>
-          <PatternThumbnail
-            key={`${pattern.n}-${pattern.m}`}
-            pattern={pattern}
-            size={250}
-            theme="gold"
-            className={styles.thumb}
-          />
+          <div className={styles.thumb}>
+            <SandCanvas
+              key={`${pattern.n}-${pattern.m}`}
+              pattern={pattern}
+              theme="gold"
+              energy={0.6}
+            />
+          </div>
         </div>
       </div>
       <figcaption className={styles.plaque}>

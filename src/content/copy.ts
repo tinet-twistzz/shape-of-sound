@@ -59,7 +59,6 @@ export const copy = {
       exhibitCode: (order: number) => `No.${String(order).padStart(2, '0')}`,
       rowPitch: '音高',
       rowPattern: '它画出了',
-      rowMode: '振动模态',
       pitchLabels: {
         low: '低沉',
         mid: '适中',
@@ -351,11 +350,7 @@ export const copy = {
   footer: {
     brandLine: '声之形 · The Shape of Sound',
     credit: '灵感来自 Ernst Chladni 的克拉尼图形实验（1787）',
-    note: '本站为声音科普演示，粒子为占位实现。',
-    audioCredit:
-      '真实音频源自 Wikimedia Commons 开源声音库（CC0 / Public Domain / CC BY-SA），详情见 public/sounds/CREDITS.md。',
     hallEnd: 'END OF HALLS',
-    simulationNote: '图案为示意模拟，真实图案与板的形状、材质有关。',
   },
   sand: {
     plateCaption: 'CHLADNI PLATE · SIMULATED',

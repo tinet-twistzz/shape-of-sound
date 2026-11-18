@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 import { SandCanvas } from '@/components/sand/SandCanvas'
 import type { SandCanvasHandle } from '@/components/sand/SandCanvas'
@@ -101,7 +102,8 @@ export function ReplayModal({ work, onClose }: ReplayModalProps) {
     }
   }
 
-  return (
+  // Section 入场动画保留 transform，fixed 弹层会以其为定位基准；挂到 body 才能视口居中
+  return createPortal(
     <div className={styles.overlay} role="presentation" onClick={onClose}>
       <div
         className={styles.panel}
@@ -166,6 +168,7 @@ export function ReplayModal({ work, onClose }: ReplayModalProps) {
           </Button>
         </footer>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
