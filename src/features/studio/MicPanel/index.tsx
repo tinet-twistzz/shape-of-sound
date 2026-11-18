@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/Button'
 import { MicIcon } from '@/components/ui/icons'
 import { copy } from '@/content/copy'
-import type { CompressionMode, MicStatus, PlateShape } from '@/types/domain'
+import type { CompressionMode, MicStatus } from '@/types/domain'
 
 import { LONG_MAX_SECONDS, LONG_MIN_SECONDS } from '../longSoundCompression'
 
@@ -18,7 +18,6 @@ export interface MicPanelProps {
   capturePhase: CapturePhase
   secondsLeft: number
   report: string | null
-  plateShape: PlateShape
   longPhase: LongPhase
   longElapsed: number
   longDuration: number | null
@@ -26,7 +25,6 @@ export interface MicPanelProps {
   onStart: () => void
   onStop: () => void
   onCapture: () => void
-  onPlateShapeChange: (shape: PlateShape) => void
   onStartLong: () => void
   onFinishLong: () => void
   onCompressionModeChange: (mode: CompressionMode) => void
@@ -52,7 +50,6 @@ export function MicPanel({
   capturePhase,
   secondsLeft,
   report,
-  plateShape,
   longPhase,
   longElapsed,
   longDuration,
@@ -60,7 +57,6 @@ export function MicPanel({
   onStart,
   onStop,
   onCapture,
-  onPlateShapeChange,
   onStartLong,
   onFinishLong,
   onCompressionModeChange,
@@ -155,24 +151,6 @@ export function MicPanel({
               <MicIcon size={16} />
               {t.captureAgain}
             </Button>
-            <div className={styles.plateSwitch} role="group" aria-label={t.plateSwitchAria}>
-              <Button
-                variant={plateShape === 'square' ? 'primary' : 'outline'}
-                size="sm"
-                aria-pressed={plateShape === 'square'}
-                onClick={() => onPlateShapeChange('square')}
-              >
-                {t.plateSquare}
-              </Button>
-              <Button
-                variant={plateShape === 'circle' ? 'primary' : 'outline'}
-                size="sm"
-                aria-pressed={plateShape === 'circle'}
-                onClick={() => onPlateShapeChange('circle')}
-              >
-                {t.plateCircle}
-              </Button>
-            </div>
           </div>
         </div>
       )}

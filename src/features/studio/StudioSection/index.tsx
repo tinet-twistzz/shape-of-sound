@@ -18,6 +18,7 @@ import { InputModeSwitch } from '../InputModeSwitch'
 import { CAPTURE_SECONDS, MicPanel } from '../MicPanel'
 import type { CapturePhase, LongPhase } from '../MicPanel'
 import { ParticleThemePicker } from '../ParticleThemePicker'
+import { PlateShapePicker } from '../PlateShapePicker'
 import { SignatureForm } from '../SignatureForm'
 import { WaveIndicator } from '../WaveIndicator'
 import { describeFrequency, energyForFrequency, previewWaveform } from '../frequencyMeta'
@@ -95,13 +96,13 @@ export function StudioSection() {
         m: longSlices[0].m,
         a: 1,
         b: -1,
-        plateShape: compressionMode === 'rings' ? 'circle' : 'square',
+        plateShape: compressionMode === 'rings' ? 'circle' : plateShape,
         compressionMode,
         timelineSlices: longSlices,
       }
     }
     if (inputMode === 'mic' && utterance) return { ...utterance.pattern, plateShape }
-    return patternMapper.frequencyToPattern(frequencyHz)
+    return { ...patternMapper.frequencyToPattern(frequencyHz), plateShape }
   }, [inputMode, longSlices, compressionMode, utterance, plateShape, patternMapper, frequencyHz])
   const description = describeFrequency(frequencyHz)
   const energy =
@@ -360,6 +361,15 @@ export function StudioSection() {
     actions.setInputMode(mode)
   }
 
+  const handlePlateShape = (shape: PlateShape) => {
+    setPlateShape(shape)
+  }
+
+  // 子组件 SandCanvas 的 effect 先按新盘形重撒，这里再 scatter 让沙粒立刻重新排队
+  useEffect(() => {
+    sandRef.current?.scatter()
+  }, [plateShape])
+
   const handleCommit = (hz: number) => {
     audioEngine.playTone(hz)
     sandRef.current?.scatter()
@@ -480,7 +490,6 @@ export function StudioSection() {
                 capturePhase={capturePhase}
                 secondsLeft={secondsLeft}
                 report={utterance?.report ?? null}
-                plateShape={plateShape}
                 longPhase={longPhase}
                 longElapsed={longElapsed}
                 longDuration={longDuration}
@@ -490,7 +499,6 @@ export function StudioSection() {
                 onCapture={() => {
                   void startCapture()
                 }}
-                onPlateShapeChange={setPlateShape}
                 onStartLong={() => {
                   void startLong()
                 }}
@@ -517,11 +525,15 @@ export function StudioSection() {
             </div>
           </ConsoleGroup>
 
-          <ConsoleGroup index="03" title={t.themeLabel} en={t.groupMaterialEn}>
+          <ConsoleGroup index="03" title={t.groupPlate} en={t.groupPlateEn}>
+            <PlateShapePicker value={plateShape} onChange={handlePlateShape} />
+          </ConsoleGroup>
+
+          <ConsoleGroup index="04" title={t.themeLabel} en={t.groupMaterialEn}>
             <ParticleThemePicker value={theme} onChange={actions.setTheme} />
           </ConsoleGroup>
 
-          <ConsoleGroup index="04" title={t.groupSignature} en={t.groupSignatureEn}>
+          <ConsoleGroup index="05" title={t.groupSignature} en={t.groupSignatureEn}>
             <SignatureForm
               author={author}
               onAuthorChange={actions.setAuthor}

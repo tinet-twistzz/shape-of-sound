@@ -1,4 +1,4 @@
-import type { PitchLevel, SectionId } from '@/types/domain'
+import type { PitchLevel, PlateShape, SectionId } from '@/types/domain'
 
 const quizExplanations: Record<string, string> = {
   q1: '揭晓：这是澳洲的【迪吉里杜管共鸣】！超低频空气柱驻波波长极长，只能画出错落宽阔的线条。',
@@ -149,8 +149,12 @@ export const copy = {
       captureCountdown: (seconds: string) => `还剩 ${seconds} 秒`,
       captureDone: '画好啦！沙盘已定格这句话的样子',
       reportTitle: '声音小报告',
-      plateSquare: '方盘',
-      plateCircle: '圆盘',
+      plateShapes: {
+        square: '方盘',
+        circle: '圆盘',
+        hexagon: '六角盘',
+        triangle: '三角盘',
+      } satisfies Record<PlateShape, string>,
       plateSwitchAria: '切换沙盘形状',
       realtimeHint: '也可以开启麦克风，让沙纹实时跟着你的声音走，闭嘴也不散',
       utteranceReport: {
@@ -197,6 +201,8 @@ export const copy = {
       groupInputEn: 'INPUT SOURCE',
       groupSignal: '声音信号',
       groupSignalEn: 'SIGNAL',
+      groupPlate: '共振盘形状',
+      groupPlateEn: 'PLATE SHAPE',
       groupMaterialEn: 'MATERIAL',
       groupSignature: '落款收藏',
       groupSignatureEn: 'SIGNATURE',

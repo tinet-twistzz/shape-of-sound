@@ -1,11 +1,13 @@
 // 克拉尼驻波粒子沙盘：z(x,y) = a·cos(πnx)·cos(πmy) + b·cos(πmx)·cos(πny)，(x,y) ∈ [-1,1]²。
-// 长声音压缩画法：rings 把时间切片画成同心年轮，exposure 取最响瞬间叠印成复合方盘。
+// 盘形边界统一用有向距离场 plateSignedDist：盘内 < 0、边缘 = 0、盘外 > 0，
+// 出界粒子沿数值法线推回并温和反弹；六角/三角盘用旋转对称平面波叠加驻波场。
+// 长声音压缩画法：rings 把时间切片画成同心年轮（固定圆盘），exposure 取最响瞬间叠印。
 // 场查找表仅在模态变化时重建；动画循环内只做双线性插值，不调用三角函数。
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 
 import { copy } from '@/content/copy'
-import type { ParticleTheme, PatternParams } from '@/types/domain'
+import type { ParticleTheme, PatternParams, PlateShape } from '@/types/domain'
 
 import styles from './SandCanvas.module.css'
 
@@ -33,7 +35,6 @@ const GRID = 128
 const DESKTOP_COUNT = 30000
 const MOBILE_COUNT = 7000
 const MIN_COUNT = 3000
-const BOARD = 0.96
 const JITTER = 0.05
 const MIGRATE = 0.004
 const DAMPING = 0.86
@@ -43,6 +44,13 @@ const POINTER_RADIUS = 0.24
 const POINTER_PUSH = 0.02
 const BG_SOLID = '#0A0C10'
 const BG_TRAIL = 'rgba(10, 12, 16, 0.28)'
+const PLATE_FILL = 'rgba(232, 230, 225, 0.028)'
+const PLATE_RIM = 'rgba(212, 175, 55, 0.4)'
+const PLATE_R = 0.95
+const SQRT3_2 = Math.sqrt(3) / 2
+const HEX_APOTHEM = PLATE_R * SQRT3_2
+const TRI_R = 0.98
+const TRI_APOTHEM = TRI_R / 2
 
 const THEME_COLORS: Record<ParticleTheme, { base: string; bright: string; glow: string }> = {
   gold: {
@@ -82,6 +90,24 @@ const VOICE_BANDS = [
   'rgba(255, 242, 204, 0.95)',
 ]
 
+// 统一有向距离场：盘内 < 0、边缘 = 0、盘外 > 0。
+// 六角/三角用凸多边形半平面距离（内部与近边处精确），数值法线反弹对所有形状通用
+function plateSignedDist(x: number, y: number, shape: PlateShape): number {
+  switch (shape) {
+    case 'circle':
+      return Math.sqrt(x * x + y * y) - PLATE_R
+    case 'hexagon':
+      return (
+        Math.max(Math.abs(x), Math.abs(0.5 * x + SQRT3_2 * y), Math.abs(0.5 * x - SQRT3_2 * y)) -
+        HEX_APOTHEM
+      )
+    case 'triangle':
+      return Math.max(y, -SQRT3_2 * x - 0.5 * y, SQRT3_2 * x - 0.5 * y) - TRI_APOTHEM
+    default:
+      return Math.max(Math.abs(x), Math.abs(y)) - PLATE_R
+  }
+}
+
 interface Field {
   amp: Float32Array
   dirX: Float32Array
@@ -93,7 +119,8 @@ interface Sim {
   ctx: CanvasRenderingContext2D
   field: Field
   patternKey: string
-  circle: boolean
+  shape: PlateShape
+  platePath: Path2D | null
   theme: ParticleTheme
   energy: number
   interactive: boolean
@@ -128,10 +155,10 @@ function patternKeyOf(pattern: PatternParams): string {
   return `${pattern.n}-${pattern.m}-${pattern.a ?? 0}-${pattern.b ?? 0}-${pattern.plateShape ?? 'square'}-${secKey}-${pattern.compressionMode ?? 'live'}-${sliceKey}`
 }
 
-function isCirclePattern(pattern: PatternParams): boolean {
-  if (pattern.compressionMode === 'rings') return true
-  if (pattern.compressionMode === 'exposure') return false
-  return pattern.plateShape === 'circle'
+// 声音年轮固定按圆盘处理；其余模式（含多重曝光）严格服从所选盘形
+function effectiveShape(pattern: PatternParams): PlateShape {
+  if (pattern.compressionMode === 'rings') return 'circle'
+  return pattern.plateShape ?? 'square'
 }
 
 type TimelineSlice = NonNullable<PatternParams['timelineSlices']>[number]
@@ -206,6 +233,51 @@ function buildExposureField(slices: TimelineSlice[], amp: Float32Array): void {
   }
 }
 
+// 六角盘 / 三角盘：三列互成 60° 的平面波叠加，呈 6 重 / 3 重旋转对称（雪花 / 三叶星阵）。
+// cos(πk(u/2 ± √3v/2)) 用和角公式展开为可分离余弦表，建表后逐格只做乘加
+function buildRotSymField(
+  amp: Float32Array,
+  shape: PlateShape,
+  n: number,
+  m: number,
+  a: number,
+  b: number,
+  sec: { n2: number; m2: number; w2: number } | null,
+): void {
+  const triangle = shape === 'triangle'
+  const freqs = sec ? [n, m, sec.n2, sec.m2] : [n, m]
+  const cu = freqs.map(() => new Float32Array(GRID))
+  const ch = freqs.map(() => new Float32Array(GRID))
+  const cv = freqs.map(() => new Float32Array(GRID))
+  for (let i = 0; i < GRID; i += 1) {
+    const t = -1 + (2 * i) / (GRID - 1)
+    for (let f = 0; f < freqs.length; f += 1) {
+      const k = Math.PI * freqs[f]
+      cu[f][i] = Math.cos(k * t)
+      ch[f][i] = Math.cos((k * t) / 2)
+      cv[f][i] = Math.cos(k * SQRT3_2 * t)
+    }
+  }
+  for (let j = 0; j < GRID; j += 1) {
+    const y = -1 + (2 * j) / (GRID - 1)
+    for (let i = 0; i < GRID; i += 1) {
+      const x = -1 + (2 * i) / (GRID - 1)
+      if (plateSignedDist(x, y, shape) > 0) continue
+      const ui = triangle ? j : i
+      const vi = triangle ? i : j
+      const zn = cu[0][ui] + 2 * ch[0][ui] * cv[0][vi]
+      const zm = cu[1][ui] + 2 * ch[1][ui] * cv[1][vi]
+      let z = a * zn + b * zm
+      if (sec) {
+        const zn2 = cu[2][ui] + 2 * ch[2][ui] * cv[2][vi]
+        const zm2 = cu[3][ui] + 2 * ch[3][ui] * cv[3][vi]
+        z += sec.w2 * (a * zn2 + b * zm2)
+      }
+      amp[j * GRID + i] = Math.abs(z) / 3
+    }
+  }
+}
+
 function buildField(pattern: PatternParams): Field {
   const n = Math.max(1, Math.round(pattern.n))
   const m = Math.max(1, Math.round(pattern.m))
@@ -224,13 +296,14 @@ function buildField(pattern: PatternParams): Field {
   const amp = new Float32Array(size)
   const dirX = new Float32Array(size)
   const dirY = new Float32Array(size)
+  const shape = effectiveShape(pattern)
 
   const slices = pattern.timelineSlices
   if (pattern.compressionMode === 'rings' && slices && slices.length > 0) {
     buildRingsField(slices, amp)
   } else if (pattern.compressionMode === 'exposure' && slices && slices.length > 0) {
     buildExposureField(slices, amp)
-  } else if (pattern.plateShape === 'circle') {
+  } else if (shape === 'circle') {
     // 圆盘：放射花瓣 × 同心波纹，z(r,θ) = cos(πmr)·(a·cos(nθ) + b)，圆外置 0
     for (let j = 0; j < GRID; j += 1) {
       const y = -1 + (2 * j) / (GRID - 1)
@@ -246,7 +319,10 @@ function buildField(pattern: PatternParams): Field {
         amp[j * GRID + i] = Math.abs(z)
       }
     }
+  } else if (shape === 'hexagon' || shape === 'triangle') {
+    buildRotSymField(amp, shape, n, m, a, b, sec ? { n2, m2, w2 } : null)
   } else {
+    // 方盘：正交驻波叠加
     const cosN = new Float32Array(GRID)
     const cosM = new Float32Array(GRID)
     const cosN2 = new Float32Array(GRID)
@@ -295,14 +371,22 @@ function seedRange(sim: Sim, from: number, to: number, recolor = true): void {
   const p = sim.particles
   for (let i = from; i < to; i += 1) {
     const o = i * 4
-    if (sim.circle) {
-      const r = BOARD * Math.sqrt(Math.random())
+    if (sim.shape === 'circle') {
+      const r = PLATE_R * Math.sqrt(Math.random())
       const theta = Math.random() * Math.PI * 2
       p[o] = r * Math.cos(theta)
       p[o + 1] = r * Math.sin(theta)
     } else {
-      p[o] = (Math.random() * 2 - 1) * BOARD
-      p[o + 1] = (Math.random() * 2 - 1) * BOARD
+      // 拒绝采样：包围盒内均匀落沙，落在盘外就重撒，任意形状通用
+      let x = 0
+      let y = 0
+      for (let tries = 0; tries < 24; tries += 1) {
+        x = Math.random() * 2 - 1
+        y = Math.random() * 2 - 1
+        if (plateSignedDist(x, y, sim.shape) < -0.01) break
+      }
+      p[o] = x
+      p[o + 1] = y
     }
     p[o + 2] = 0
     p[o + 3] = 0
@@ -385,34 +469,26 @@ function stepSim(sim: Sim): void {
     vy *= damp
     x += vx
     y += vy
-    if (sim.circle) {
-      const r2 = x * x + y * y
-      if (r2 > BOARD * BOARD) {
-        const r = Math.sqrt(r2)
-        const ux = x / r
-        const uy = y / r
-        x = ux * BOARD
-        y = uy * BOARD
-        const vn = vx * ux + vy * uy
+    // 统一 SDF 边界：出界时沿数值法线推回盘内，并沿法线温和反弹（恢复系数 0.5）
+    const dist = plateSignedDist(x, y, sim.shape)
+    if (dist > 0) {
+      const e = 0.004
+      let nx = plateSignedDist(x + e, y, sim.shape) - plateSignedDist(x - e, y, sim.shape)
+      let ny = plateSignedDist(x, y + e, sim.shape) - plateSignedDist(x, y - e, sim.shape)
+      const len = Math.sqrt(nx * nx + ny * ny)
+      if (len > 1e-6) {
+        nx /= len
+        ny /= len
+        x -= nx * (dist + 0.002)
+        y -= ny * (dist + 0.002)
+        const vn = vx * nx + vy * ny
         if (vn > 0) {
-          vx -= 1.5 * vn * ux
-          vy -= 1.5 * vn * uy
+          vx -= 1.5 * vn * nx
+          vy -= 1.5 * vn * ny
         }
-      }
-    } else {
-      if (x > BOARD) {
-        x = BOARD
-        vx *= -0.5
-      } else if (x < -BOARD) {
-        x = -BOARD
-        vx *= -0.5
-      }
-      if (y > BOARD) {
-        y = BOARD
-        vy *= -0.5
-      } else if (y < -BOARD) {
-        y = -BOARD
-        vy *= -0.5
+      } else {
+        x *= 0.9
+        y *= 0.9
       }
     }
     p[o] = x
@@ -484,15 +560,64 @@ function drawParticles(sim: Sim): void {
   }
 }
 
+// 与 plateSignedDist 完全吻合的盘面轮廓，仅在换形 / resize 时重建一次
+function buildPlatePath(sim: Sim): void {
+  if (sim.w === 0 || sim.h === 0) return
+  const s = Math.min(sim.w, sim.h) / 2
+  const cx = sim.w / 2
+  const cy = sim.h / 2
+  const px = (x: number) => cx + x * s
+  const py = (y: number) => cy + y * s
+  const path = new Path2D()
+  switch (sim.shape) {
+    case 'circle':
+      path.arc(cx, cy, PLATE_R * s, 0, Math.PI * 2)
+      break
+    case 'hexagon':
+      for (let k = 0; k < 6; k += 1) {
+        const ang = Math.PI / 6 + (k * Math.PI) / 3
+        const vx = px(PLATE_R * Math.cos(ang))
+        const vy = py(PLATE_R * Math.sin(ang))
+        if (k === 0) path.moveTo(vx, vy)
+        else path.lineTo(vx, vy)
+      }
+      path.closePath()
+      break
+    case 'triangle':
+      path.moveTo(px(0), py(-TRI_R))
+      path.lineTo(px(TRI_R * SQRT3_2), py(TRI_APOTHEM))
+      path.lineTo(px(-TRI_R * SQRT3_2), py(TRI_APOTHEM))
+      path.closePath()
+      break
+    default: {
+      const r = PLATE_R * s
+      path.rect(cx - r, cy - r, r * 2, r * 2)
+    }
+  }
+  sim.platePath = path
+}
+
+// 极细暗金外框 + 微弱盘面底色，叠在背景之上、沙粒之下
+function drawPlate(sim: Sim): void {
+  if (!sim.platePath) return
+  sim.ctx.fillStyle = PLATE_FILL
+  sim.ctx.fill(sim.platePath)
+  sim.ctx.strokeStyle = PLATE_RIM
+  sim.ctx.lineWidth = Math.max(1, sim.dpr * 0.75)
+  sim.ctx.stroke(sim.platePath)
+}
+
 function cleanDraw(sim: Sim): void {
   sim.ctx.fillStyle = BG_SOLID
   sim.ctx.fillRect(0, 0, sim.w, sim.h)
+  drawPlate(sim)
   drawParticles(sim)
 }
 
 function trailDraw(sim: Sim): void {
   sim.ctx.fillStyle = BG_TRAIL
   sim.ctx.fillRect(0, 0, sim.w, sim.h)
+  drawPlate(sim)
   drawParticles(sim)
 }
 
@@ -589,7 +714,8 @@ export const SandCanvas = forwardRef<SandCanvasHandle, SandCanvasProps>(function
       ctx,
       field: buildField(init.pattern),
       patternKey: patternKeyOf(init.pattern),
-      circle: isCirclePattern(init.pattern),
+      shape: effectiveShape(init.pattern),
+      platePath: null,
       theme: init.theme,
       energy: init.energy,
       interactive: init.interactive,
@@ -628,6 +754,7 @@ export const SandCanvas = forwardRef<SandCanvasHandle, SandCanvasProps>(function
       sim.dpr = dpr
       canvas.width = w
       canvas.height = h
+      buildPlatePath(sim)
       if (sim.reduced) settle(sim)
       else cleanDraw(sim)
     }
@@ -684,9 +811,10 @@ export const SandCanvas = forwardRef<SandCanvasHandle, SandCanvasProps>(function
     if (!sim || sim.patternKey === key) return
     sim.patternKey = key
     sim.field = buildField(pattern)
-    const circle = isCirclePattern(pattern)
-    if (circle !== sim.circle) {
-      sim.circle = circle
+    const shape = effectiveShape(pattern)
+    if (shape !== sim.shape) {
+      sim.shape = shape
+      buildPlatePath(sim)
       seedParticles(sim)
     }
     if (sim.reduced) settle(sim)
@@ -758,8 +886,13 @@ export const SandCanvas = forwardRef<SandCanvasHandle, SandCanvasProps>(function
     '--energy': clampedEnergy,
   } as CSSProperties
 
-  const isCircle = isCirclePattern(pattern)
-  const classes = [styles.canvas, isCircle && styles.circle, interactive && styles.interactive, className]
+  const shape = effectiveShape(pattern)
+  const classes = [
+    styles.canvas,
+    shape === 'circle' && styles.circle,
+    interactive && styles.interactive,
+    className,
+  ]
     .filter(Boolean)
     .join(' ')
 
@@ -774,14 +907,14 @@ export const SandCanvas = forwardRef<SandCanvasHandle, SandCanvasProps>(function
       <canvas ref={canvasRef} className={styles.surface} aria-hidden="true" />
       <div className={styles.glow} aria-hidden="true" />
       <svg className={styles.grid} viewBox="0 0 100 100" aria-hidden="true">
-        {isCircle ? (
+        {shape === 'circle' ? (
           <>
             <circle cx="50" cy="50" r="48.5" className={styles.rim} />
             <circle cx="50" cy="50" r="24" strokeDasharray="1 4" />
             <line x1="50" y1="1.5" x2="50" y2="98.5" strokeDasharray="1 4" />
             <line x1="1.5" y1="50" x2="98.5" y2="50" strokeDasharray="1 4" />
           </>
-        ) : (
+        ) : shape === 'square' ? (
           <>
             <line x1="50" y1="4" x2="50" y2="96" strokeDasharray="1 4" />
             <line x1="4" y1="50" x2="96" y2="50" strokeDasharray="1 4" />
@@ -800,6 +933,12 @@ export const SandCanvas = forwardRef<SandCanvasHandle, SandCanvasProps>(function
             <path d="M94 1 H99 V6" className={styles.corner} />
             <path d="M99 94 V99 H94" className={styles.corner} />
             <path d="M6 99 H1 V94" className={styles.corner} />
+          </>
+        ) : (
+          <>
+            {/* 异形盘：精确轮廓由 Canvas 按 SDF 绘制，这里只留十字基准线 */}
+            <line x1="50" y1="6" x2="50" y2="94" strokeDasharray="1 4" />
+            <line x1="6" y1="50" x2="94" y2="50" strokeDasharray="1 4" />
           </>
         )}
         <circle cx="50" cy="50" r="0.9" className={styles.centerDot} />

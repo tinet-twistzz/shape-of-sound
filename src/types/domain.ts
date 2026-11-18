@@ -8,7 +8,7 @@ export type MicStatus = 'idle' | 'requesting' | 'listening' | 'denied' | 'unsupp
 
 export type SectionId = 'hero' | 'gallery' | 'quiz' | 'studio'
 
-export type PlateShape = 'square' | 'circle'
+export type PlateShape = 'square' | 'circle' | 'hexagon' | 'triangle'
 
 /** 长声音压缩画法：'exposure' 多重曝光叠压，'rings' 声音年轮 */
 export type CompressionMode = 'exposure' | 'rings'
