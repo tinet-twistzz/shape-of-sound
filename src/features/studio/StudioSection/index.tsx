@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 
 import { Section } from '@/components/layout/Section'
-import { SandCanvas } from '@/components/sand/SandCanvas'
+import { SandCanvas, plateSignedDist } from '@/components/sand/SandCanvas'
 import type { SandCanvasHandle } from '@/components/sand/SandCanvas'
 import { Button } from '@/components/ui/Button'
 import { SectionHeader } from '@/components/ui/SectionHeader'
@@ -14,8 +14,9 @@ import { centroidToB } from '@/services/real/chladniPatternMapper'
 import { GalleryError } from '@/services/real/galleryService'
 import { localGallery } from '@/services/real/localGallery'
 import { useAppActions, useAppState } from '@/store/appStateContext'
-import type { Artwork, CompressionMode, InputMode, ParticleMedium, PatternParams, PlateShape, ReplayMeta } from '@/types/domain'
+import type { Artwork, CompressionMode, InputMode, ParticleMedium, PatternParams, PlateShape, ReplayMeta, ResonanceChord } from '@/types/domain'
 
+import { ChordSelector } from '../ChordSelector'
 import { FrequencySlider } from '../FrequencySlider'
 import { InputModeSwitch } from '../InputModeSwitch'
 import { MediumPicker } from '../MediumPicker'
@@ -26,10 +27,14 @@ import { PlateShapePicker } from '../PlateShapePicker'
 import { PublishDialog } from '../PublishDialog'
 import { SignatureForm } from '../SignatureForm'
 import type { SignatureBusy } from '../SignatureForm'
+import { TimbreSlider } from '../TimbreSlider'
 import { WaveIndicator } from '../WaveIndicator'
+import { chordBOffset, chordSecondary, chordTwist } from '../chordMeta'
 import { describeFrequency, energyForFrequency, previewWaveform } from '../frequencyMeta'
 import { LONG_MAX_SECONDS, LONG_MIN_SECONDS, compressTimeline } from '../longSoundCompression'
 import type { LongSoundSample, TimelineSlice } from '../longSoundCompression'
+import { solvePinTimbre } from '../pinNode'
+import { DEFAULT_TIMBRE, timbreToB } from '../timbreMeta'
 import { analyzeUtterance } from '../utteranceAnalysis'
 import type { UtteranceResult, UtteranceSample } from '../utteranceAnalysis'
 
@@ -87,6 +92,10 @@ export function StudioSection() {
   const finishLongRef = useRef<(() => void) | null>(null)
   const [voiceDensity, setVoiceDensity] = useState(0.3)
   const [colorBand, setColorBand] = useState<0 | 1 | 2 | 3>(1)
+  const [timbre, setTimbre] = useState(DEFAULT_TIMBRE)
+  const [chord, setChord] = useState<ResonanceChord>('solo')
+  const [pinMode, setPinMode] = useState(false)
+  const [pin, setPin] = useState<{ x: number; y: number } | null>(null)
   const [busy, setBusy] = useState<SignatureBusy>(null)
   const [publishOpen, setPublishOpen] = useState(false)
   const voiceChargeRef = useRef(0)
@@ -128,8 +137,22 @@ export function StudioSection() {
       const b = micCentroid !== null ? centroidToB(micCentroid) : base.b
       return { ...base, b, plateShape, medium }
     }
-    return { ...patternMapper.frequencyToPattern(frequencyHz), plateShape, medium }
-  }, [inputMode, longSlices, compressionMode, utterance, plateShape, medium, patternMapper, frequencyHz, mapVoicePitch, micCentroid])
+    // 滑杆模式：频率定主模态，音色形态定耦合比，和弦档位叠副模态 / 扭转场
+    const base = patternMapper.frequencyToPattern(frequencyHz)
+    const next: PatternParams = {
+      ...base,
+      a: 1,
+      b: Math.round((timbreToB(timbre) + chordBOffset(chord)) * 100) / 100,
+      plateShape,
+      medium,
+    }
+    const secondary = chordSecondary(base.n, base.m, chord)
+    if (secondary) next.secondary = secondary
+    else delete next.secondary
+    const twist = chordTwist(chord)
+    if (twist !== 0) next.twist = twist
+    return next
+  }, [inputMode, longSlices, compressionMode, utterance, plateShape, medium, patternMapper, frequencyHz, mapVoicePitch, micCentroid, timbre, chord])
   const description = describeFrequency(frequencyHz)
   const energy =
     inputMode === 'mic' && longSlices
@@ -230,6 +253,7 @@ export function StudioSection() {
   )
 
   const startMic = useCallback(async () => {
+    audioEngine.stop()
     actions.setMicStatus('requesting')
     try {
       await micInput.start()
@@ -238,7 +262,7 @@ export function StudioSection() {
       const denied = error instanceof DOMException && error.name === 'NotAllowedError'
       actions.setMicStatus(denied ? 'denied' : 'unsupported')
     }
-  }, [micInput, actions])
+  }, [audioEngine, micInput, actions])
 
   const handleRealtimeStart = useCallback(() => {
     setUtterance(null)
@@ -254,6 +278,7 @@ export function StudioSection() {
     resetLong()
     resetVoiceSand()
     setUtterance(null)
+    audioEngine.stop()
     if (micStatus !== 'listening') {
       actions.setMicStatus('requesting')
       try {
@@ -301,7 +326,7 @@ export function StudioSection() {
       window.clearInterval(ticker)
       unsubscribe()
     }
-  }, [micStatus, micInput, actions, mapVoicePitch, resetLong, resetVoiceSand])
+  }, [micStatus, micInput, audioEngine, actions, mapVoicePitch, resetLong, resetVoiceSand])
 
   // 长声音压缩录画：3~20 秒逐帧采集 → 重采样成 16 个时间切片 → 定格成年轮 / 多重曝光
   const startLong = useCallback(async () => {
@@ -314,6 +339,7 @@ export function StudioSection() {
     setUtterance(null)
     setLongSlices(null)
     resetVoiceSand()
+    audioEngine.stop()
     if (micStatus !== 'listening') {
       actions.setMicStatus('requesting')
       try {
@@ -383,13 +409,17 @@ export function StudioSection() {
       window.clearInterval(ticker)
       unsubscribe()
     }
-  }, [micStatus, micInput, actions, mapVoicePitch, toast, resetVoiceSand])
+  }, [micStatus, micInput, audioEngine, actions, mapVoicePitch, toast, resetVoiceSand])
 
   const handleFinishLong = useCallback(() => {
     finishLongRef.current?.()
   }, [])
 
   const handleModeChange = (mode: InputMode) => {
+    if (mode !== 'slider') {
+      setPinMode(false)
+      setPin(null)
+    }
     actions.setInputMode(mode)
   }
 
@@ -404,9 +434,69 @@ export function StudioSection() {
   }, [plateShape, medium])
 
   const handleCommit = (hz: number) => {
-    audioEngine.playTone(hz)
+    audioEngine.playTone(hz, { timbre, chord })
     sandRef.current?.scatter()
   }
+
+  const handleTimbreChange = (value: number) => {
+    // 手动调音色即从指尖制音钉接管耦合比控制权
+    setPin(null)
+    setTimbre(value)
+  }
+
+  const handleTimbreCommit = (value: number) => {
+    audioEngine.playTone(frequencyHz, { timbre: value, chord })
+  }
+
+  const handleChordChange = (next: ResonanceChord) => {
+    setChord(next)
+    audioEngine.playTone(frequencyHz, { timbre, chord: next })
+  }
+
+  const handlePinToggle = () => {
+    setPinMode((on) => !on)
+    setPin(null)
+  }
+
+  const handlePinPlace = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!pinMode || inputMode !== 'slider') return
+    const rect = event.currentTarget.getBoundingClientRect()
+    if (rect.width === 0 || rect.height === 0) return
+    const x = ((event.clientX - rect.left) / rect.width) * 2 - 1
+    const y = ((event.clientY - rect.top) / rect.height) * 2 - 1
+    if (plateSignedDist(x, y, plateShape) > -0.02) return
+    const base = patternMapper.frequencyToPattern(frequencyHz)
+    const solved = solvePinTimbre(
+      x,
+      y,
+      base.n,
+      base.m,
+      plateShape,
+      chordTwist(chord),
+      chordBOffset(chord),
+    )
+    setPin({ x, y })
+    if (solved !== null) {
+      setTimbre(solved)
+      audioEngine.playTone(frequencyHz, { timbre: solved, chord })
+    }
+  }
+
+  // 制音钉按住期间，频率 / 盘形 / 和弦变化时反解保持指尖点仍为静止波节
+  useEffect(() => {
+    if (!pin || inputMode !== 'slider') return
+    const base = patternMapper.frequencyToPattern(frequencyHz)
+    const solved = solvePinTimbre(
+      pin.x,
+      pin.y,
+      base.n,
+      base.m,
+      plateShape,
+      chordTwist(chord),
+      chordBOffset(chord),
+    )
+    if (solved !== null) setTimbre(solved)
+  }, [pin, inputMode, frequencyHz, plateShape, chord, patternMapper])
 
   const currentDensity = inputMode === 'mic' && theme === 'voice' ? voiceDensity : 1
 
@@ -443,6 +533,7 @@ export function StudioSection() {
       await artworkExporter.export(artwork, snapshot)
       try {
         await localGallery.save({ ...artwork, title, replayMeta: captureReplayMeta(state), image, state })
+        actions.refreshGallery()
       } catch {
         // 本机收藏失败不影响下载
       }
@@ -497,6 +588,8 @@ export function StudioSection() {
       } catch {
         // 本机收藏失败不影响发布结果
       }
+      // 无论公共发布成败，本机展厅都已写入；发布成功时公共展厅也需刷新
+      actions.refreshGallery()
       if (published) {
         toast(t.publishedToast, 'success')
         setPublishOpen(false)
@@ -523,16 +616,61 @@ export function StudioSection() {
       <div className={styles.layout}>
         <div className={styles.stage}>
           <div className={styles.stageSticky}>
-            <SandCanvas
-              ref={sandRef}
-              pattern={pattern}
-              theme={theme}
-              energy={energy}
-              interactive
-              density={inputMode === 'mic' && theme === 'voice' ? voiceDensity : 1}
-              activeColorBand={colorBand}
-              className={styles.canvas}
-            />
+            <div
+              className={`${styles.stageCanvas} ${pinMode ? styles.stageCanvasPin : ''}`}
+              onPointerDown={handlePinPlace}
+            >
+              <SandCanvas
+                ref={sandRef}
+                pattern={pattern}
+                theme={theme}
+                energy={energy}
+                interactive={!pinMode}
+                density={inputMode === 'mic' && theme === 'voice' ? voiceDensity : 1}
+                activeColorBand={colorBand}
+              />
+              <div
+                className={styles.sandTools}
+                role="group"
+                aria-label={t.sandToolsAria}
+                onPointerDown={(event) => event.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  className={styles.sandTool}
+                  aria-label={t.scatterAria}
+                  disabled={longPhase !== 'idle'}
+                  onClick={() => sandRef.current?.scatter()}
+                >
+                  {t.scatterLabel}
+                </button>
+                {inputMode === 'slider' && (
+                  <button
+                    type="button"
+                    className={`${styles.sandTool} ${pinMode ? styles.sandToolOn : ''}`}
+                    aria-pressed={pinMode}
+                    aria-label={t.pinModeAria}
+                    onClick={handlePinToggle}
+                  >
+                    {t.pinModeLabel}
+                  </button>
+                )}
+              </div>
+              {pinMode && pin && (
+                <button
+                  type="button"
+                  className={styles.pinMark}
+                  style={{
+                    left: `${((pin.x + 1) / 2) * 100}%`,
+                    top: `${((pin.y + 1) / 2) * 100}%`,
+                  }}
+                  aria-label={t.pinRemoveAria}
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={() => setPin(null)}
+                />
+              )}
+              {pinMode && <p className={styles.pinHint}>{t.pinHint}</p>}
+            </div>
             <div className={`mono ${styles.status}`} aria-live="polite">
               {longPhase === 'recording' ? (
                 <>
@@ -595,11 +733,19 @@ export function StudioSection() {
 
           <ConsoleGroup index="02" title={t.groupSignal} en={t.groupSignalEn}>
             {inputMode === 'slider' ? (
-              <FrequencySlider
-                value={frequencyHz}
-                onChange={actions.setFrequency}
-                onCommit={handleCommit}
-              />
+              <>
+                <FrequencySlider
+                  value={frequencyHz}
+                  onChange={actions.setFrequency}
+                  onCommit={handleCommit}
+                />
+                <TimbreSlider
+                  value={timbre}
+                  onChange={handleTimbreChange}
+                  onCommit={handleTimbreCommit}
+                />
+                <ChordSelector value={chord} onChange={handleChordChange} />
+              </>
             ) : (
               <MicPanel
                 status={micStatus}

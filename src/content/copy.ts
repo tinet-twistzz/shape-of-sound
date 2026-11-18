@@ -1,4 +1,4 @@
-import type { ParticleMedium, PitchLevel, PlateShape, SectionId } from '@/types/domain'
+import type { ParticleMedium, PitchLevel, PlateShape, ResonanceChord, SectionId } from '@/types/domain'
 
 const quizExplanations: Record<string, string> = {
   q1: '揭晓：这是澳洲的【迪吉里杜管共鸣】！超低频空气柱驻波波长极长，只能画出错落宽阔的线条。',
@@ -240,6 +240,45 @@ export const copy = {
       sliderLow: '低沉',
       sliderHigh: '尖锐',
       sliderHint: '拖动时沙纹实时变化，松手即可听到这个声音',
+      timbreLabel: '音色形态',
+      timbreCode: 'TIMBRE SHAPER',
+      timbreLow: '温润圆融',
+      timbreHigh: '清冽星芒',
+      timbreHint: '拖动改变耦合比与泛音色泽，松手试听',
+      timbreDescribe: (value: number) =>
+        value <= -0.6
+          ? '温润圆融 · 闭合圆岛'
+          : value <= -0.2
+            ? '柔和过渡 · 莲心初现'
+            : value < 0.2
+              ? '平衡驻波 · 平行波纹'
+              : value < 0.6
+                ? '清亮过渡 · 环裂初开'
+                : '清冽星芒 · 放射斜十字',
+      chordLabel: '共鸣和弦',
+      chordCode: 'RESONANCE',
+      chordAria: '选择共鸣和弦',
+      chords: {
+        solo: '独奏',
+        octave: '纯八度',
+        fifth: '纯五度',
+        third: '大三度',
+        vortex: '奇异拍频',
+      } satisfies Record<ResonanceChord, string>,
+      chordHints: {
+        solo: '纯净单模态，一条波节线一族沙纹',
+        octave: '2:1 高八度协和，叠出细密高阶暗纹',
+        fifth: '3:2 纯五度交织，双层复合曼陀罗',
+        third: '5:4 大三度暖意，微微偏向同相圆融',
+        vortex: '√2:1 微失谐拍频，节线扭成旋转风车',
+      } satisfies Record<ResonanceChord, string>,
+      sandToolsAria: '沙盘仪器工具',
+      scatterLabel: '摇散重聚',
+      scatterAria: '摇散沙粒，让它们重新聚向波节线',
+      pinModeLabel: '指尖制音',
+      pinModeAria: '切换指尖制音模式，开启后点击沙盘钉出静止波节',
+      pinHint: '点击盘内任意位置，像克拉尼一样用指尖按出波节',
+      pinRemoveAria: '拔除这枚制音钉',
       frequencyTones: {
         thunder: '低沉如滚雷',
         whale: '悠远如鲸歌',
@@ -261,8 +300,10 @@ export const copy = {
       publicEmpty: '展厅还在布展——去工坊创作第一幅公开发表的声纹画吧。',
       mineEmpty: '本机还没有藏品。在工坊「下载典藏卡」或「发布到展厅」后，作品会自动收进这里。',
       mineNote: '我的展厅只保存在这台设备的浏览器里，清除浏览数据会一并清空。',
-      loadMore: '展开更多展品',
-      loadingMore: '布展中…',
+      prevPage: '上一页',
+      nextPage: '下一页',
+      pageIndicator: (page: number) => `第 ${page} 页`,
+      paging: '布展中…',
       removeLabel: '移出我的展厅',
       removedToast: '已移出我的展厅',
       removeFailedToast: '移除失败，请稍后再试',

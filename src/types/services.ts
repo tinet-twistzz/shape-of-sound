@@ -6,6 +6,7 @@ import type {
   PrincipleChapter,
   QuizQuestion,
   ReplayMeta,
+  ResonanceChord,
   SoundPreset,
 } from './domain'
 
@@ -16,9 +17,16 @@ export interface DataSource {
   getPrincipleChapters(): Promise<PrincipleChapter[]>
 }
 
+export interface ToneOptions {
+  /** 音色形态 [-1, 1]：负端温润（泛音收敛、滤波偏暗），正端清冽（高次泛音晶莹透亮） */
+  timbre?: number
+  /** 共鸣和弦：叠加协和 / 失谐第二音，缺省独奏 */
+  chord?: ResonanceChord
+}
+
 export interface AudioEngine {
   play(sound: SoundPreset): void
-  playTone(frequencyHz: number): void
+  playTone(frequencyHz: number, options?: ToneOptions): void
   stop(): void
   setMuted(muted: boolean): void
 }

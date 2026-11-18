@@ -16,6 +16,9 @@ export type PlateShape = 'square' | 'circle' | 'hexagon' | 'triangle'
 /** 长声音压缩画法：'exposure' 多重曝光叠压，'rings' 声音年轮 */
 export type CompressionMode = 'exposure' | 'rings'
 
+/** 共鸣和弦档位：独奏 / 纯八度 / 纯五度 / 大三度 / 奇异拍频（√2 失谐涡旋） */
+export type ResonanceChord = 'solo' | 'octave' | 'fifth' | 'third' | 'vortex'
+
 export interface PatternParams {
   n: number
   m: number
