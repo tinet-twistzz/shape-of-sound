@@ -16,9 +16,10 @@ const THEMES: readonly { value: ParticleTheme; label: string }[] = [
   { value: 'gold', label: copy.sections.studio.themes.gold },
   { value: 'glacier', label: copy.sections.studio.themes.glacier },
   { value: 'neon', label: copy.sections.studio.themes.neon },
+  { value: 'voice', label: copy.sections.studio.themes.voice },
 ]
 
-/** 沙粒色泽：三块色样按钮，选中即时换沙色 */
+/** 沙粒色泽：四块色样按钮，选中即时换沙色 */
 export function ParticleThemePicker({ value, onChange, className }: ParticleThemePickerProps) {
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([])
 

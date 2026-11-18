@@ -17,7 +17,10 @@ export interface PatternThumbnailProps {
 const BG: [number, number, number] = [10, 12, 16]
 const NODE_AMP = 0.14
 
-const THEME_RGB: Record<Exclude<ParticleTheme, 'neon'>, { base: number[]; bright: number[] }> = {
+const THEME_RGB: Record<
+  Exclude<ParticleTheme, 'neon' | 'voice'>,
+  { base: number[]; bright: number[] }
+> = {
   gold: { base: [243, 201, 105], bright: [247, 220, 150] },
   glacier: { base: [86, 207, 225], bright: [226, 248, 251] },
 }
@@ -26,6 +29,14 @@ const THEME_RGB: Record<Exclude<ParticleTheme, 'neon'>, { base: number[]; bright
 const NEON_GOLD = [247, 214, 138]
 const NEON_CYAN = [86, 207, 225]
 const NEON_PURPLE = [157, 78, 221]
+
+// voice 四色：暖金 / 琉璃青 / 极光紫 / 高光星白，与 SandCanvas 的彩沙色桶一致
+const VOICE_RGB = [
+  [243, 201, 105],
+  [86, 207, 225],
+  [157, 78, 221],
+  [255, 242, 204],
+]
 
 function clamp01(t: number): number {
   return t < 0 ? 0 : t > 1 ? 1 : t
@@ -84,7 +95,7 @@ function renderFrame(
 
   const image = ctx.createImageData(px, px)
   const data = image.data
-  const palette = theme === 'neon' ? null : THEME_RGB[theme]
+  const palette = theme === 'neon' || theme === 'voice' ? null : THEME_RGB[theme]
 
   for (let j = 0; j < px; j += 1) {
     const y = coord[j]
@@ -125,6 +136,15 @@ function renderFrame(
         brightR = palette.bright[0]
         brightG = palette.bright[1]
         brightB = palette.bright[2]
+      } else if (theme === 'voice') {
+        // 粗粒度哈希分块取色，模拟不同时刻落下的彩沙交织
+        const c = VOICE_RGB[Math.min(3, (grainHash(i >> 2, j >> 2) * 4) | 0)]
+        baseR = c[0]
+        baseG = c[1]
+        baseB = c[2]
+        brightR = lerp(baseR, 255, 0.35)
+        brightG = lerp(baseG, 255, 0.35)
+        brightB = lerp(baseB, 255, 0.35)
       } else {
         const x = coord[i]
         const r = Math.sqrt(x * x + y * y)

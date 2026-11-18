@@ -76,6 +76,10 @@ export function StudioSection() {
   const [frozenEnergy, setFrozenEnergy] = useState(0.08)
   const longCancelRef = useRef<(() => void) | null>(null)
   const finishLongRef = useRef<(() => void) | null>(null)
+  const [voiceDensity, setVoiceDensity] = useState(0.3)
+  const [colorBand, setColorBand] = useState<0 | 1 | 2 | 3>(1)
+  const voiceChargeRef = useRef(0)
+  const voiceLastAtRef = useRef(0)
 
   const { inputMode, frequencyHz, theme, author, micStatus } = studio
   const listening = inputMode === 'mic' && micStatus === 'listening'
@@ -111,13 +115,31 @@ export function StudioSection() {
   const sliderWave = useMemo(() => previewWaveform(frequencyHz), [frequencyHz])
   const waveform = inputMode === 'mic' ? micWaveform : sliderWave
 
-  // 订阅麦克风数据：pitchHz → 图案，volume → 能量，waveform → 示波器
+  // 订阅麦克风数据：pitchHz → 图案，volume → 能量，waveform → 示波器；
+  // 有效发声累计能量 → 彩沙密度，音高 × 明亮度 → 当前色桶（响亮峰值直达星白）
   useEffect(() => {
     if (!listening) return
+    voiceLastAtRef.current = performance.now()
     return micInput.subscribe((frame) => {
       if (frame.pitchHz !== null) actions.setFrequency(Math.round(frame.pitchHz))
       setMicEnergy(frame.volume)
       setMicWaveform(frame.waveform)
+      const now = performance.now()
+      const dt = Math.min(0.1, (now - voiceLastAtRef.current) / 1000)
+      voiceLastAtRef.current = now
+      if (frame.volume <= 0.045) return
+      if (frame.volume > 0.7) {
+        setColorBand(3)
+      } else {
+        const brightness = frame.brightness ?? 0.4
+        const score = Math.log2(Math.max(60, frame.pitchHz ?? 200) / 120) * 0.5 + brightness * 1.2
+        setColorBand(score < 0.75 ? 0 : score < 1.35 ? 1 : 2)
+      }
+      voiceChargeRef.current = Math.min(
+        1,
+        voiceChargeRef.current + dt * (0.08 + frame.volume * 0.25),
+      )
+      setVoiceDensity(0.3 + 0.7 * voiceChargeRef.current)
     })
   }, [listening, micInput, actions])
 
@@ -127,6 +149,12 @@ export function StudioSection() {
     setMicEnergy(null)
     setMicWaveform(null)
   }, [micInput, actions])
+
+  const resetVoiceSand = useCallback(() => {
+    voiceChargeRef.current = 0
+    voiceLastAtRef.current = 0
+    setVoiceDensity(0.3)
+  }, [])
 
   const resetLong = useCallback(() => {
     if (longCancelRef.current) {
@@ -150,10 +178,11 @@ export function StudioSection() {
     resetLong()
     setCapturePhase('idle')
     setUtterance(null)
+    resetVoiceSand()
     if (micStatus === 'listening' || micStatus === 'requesting') {
       stopMic()
     }
-  }, [inputMode, micStatus, stopMic, resetLong])
+  }, [inputMode, micStatus, stopMic, resetLong, resetVoiceSand])
 
   // 离开页面 / 卸载时释放麦克风与采集定时器
   useEffect(
@@ -186,13 +215,15 @@ export function StudioSection() {
     setUtterance(null)
     setCapturePhase('idle')
     resetLong()
+    resetVoiceSand()
     void startMic()
-  }, [startMic, resetLong])
+  }, [startMic, resetLong, resetVoiceSand])
 
   // 说一句话画画：采集 2.5 秒帧数据 → 提取特征 → 定格专属图案
   const startCapture = useCallback(async () => {
     if (captureCancelRef.current) return
     resetLong()
+    resetVoiceSand()
     setUtterance(null)
     if (micStatus !== 'listening') {
       actions.setMicStatus('requesting')
@@ -239,7 +270,7 @@ export function StudioSection() {
       window.clearInterval(ticker)
       unsubscribe()
     }
-  }, [micStatus, micInput, actions, patternMapper, resetLong])
+  }, [micStatus, micInput, actions, patternMapper, resetLong, resetVoiceSand])
 
   // 长声音压缩录画：3~20 秒逐帧采集 → 重采样成 16 个时间切片 → 定格成年轮 / 多重曝光
   const startLong = useCallback(async () => {
@@ -251,6 +282,7 @@ export function StudioSection() {
     setCapturePhase('idle')
     setUtterance(null)
     setLongSlices(null)
+    resetVoiceSand()
     if (micStatus !== 'listening') {
       actions.setMicStatus('requesting')
       try {
@@ -318,7 +350,7 @@ export function StudioSection() {
       window.clearInterval(ticker)
       unsubscribe()
     }
-  }, [micStatus, micInput, actions, patternMapper, toast])
+  }, [micStatus, micInput, actions, patternMapper, toast, resetVoiceSand])
 
   const handleFinishLong = useCallback(() => {
     finishLongRef.current?.()
@@ -371,6 +403,8 @@ export function StudioSection() {
               theme={theme}
               energy={energy}
               interactive
+              density={inputMode === 'mic' && theme === 'voice' ? voiceDensity : 1}
+              activeColorBand={colorBand}
               className={styles.canvas}
             />
             <div className={`mono ${styles.status}`} aria-live="polite">

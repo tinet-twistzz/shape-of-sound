@@ -23,6 +23,10 @@ export interface SandCanvasProps {
   energy: number
   interactive?: boolean
   className?: string
+  /** 沙量密度 0.25–1：实际参与模拟与绘制的粒数 = round(count * density) */
+  density?: number
+  /** voice 主题当前声音色桶：0 暖金 / 1 琉璃青 / 2 极光紫 / 3 高光星白 */
+  activeColorBand?: 0 | 1 | 2 | 3
 }
 
 const GRID = 128
@@ -56,6 +60,11 @@ const THEME_COLORS: Record<ParticleTheme, { base: string; bright: string; glow: 
     bright: 'rgba(247, 214, 138, 0.95)',
     glow: 'rgba(157, 78, 221, 0.2)',
   },
+  voice: {
+    base: 'rgba(243, 201, 105, 0.85)',
+    bright: 'rgba(255, 242, 204, 0.95)',
+    glow: 'rgba(157, 78, 221, 0.18)',
+  },
 }
 
 // neon 主题按到中心距离分三层环带：亮金 → 琉璃青 → 极光紫
@@ -63,6 +72,14 @@ const NEON_BANDS = [
   'rgba(247, 214, 138, 0.95)',
   'rgba(86, 207, 225, 0.85)',
   'rgba(157, 78, 221, 0.85)',
+]
+
+// voice 主题四色桶：暖金 / 琉璃青 / 极光紫 / 高光星白，落入画布时锁定、不再随位置改写
+const VOICE_BANDS = [
+  'rgba(243, 201, 105, 0.85)',
+  'rgba(86, 207, 225, 0.85)',
+  'rgba(157, 78, 221, 0.85)',
+  'rgba(255, 242, 204, 0.95)',
 ]
 
 interface Field {
@@ -84,6 +101,9 @@ interface Sim {
   particles: Float32Array
   bands: Uint8Array
   count: number
+  density: number
+  activeCount: number
+  activeColorBand: 0 | 1 | 2 | 3
   w: number
   h: number
   dpr: number
@@ -271,9 +291,9 @@ function buildField(pattern: PatternParams): Field {
   return { amp, dirX, dirY }
 }
 
-function seedParticles(sim: Sim): void {
+function seedRange(sim: Sim, from: number, to: number, recolor = true): void {
   const p = sim.particles
-  for (let i = 0; i < sim.count; i += 1) {
+  for (let i = from; i < to; i += 1) {
     const o = i * 4
     if (sim.circle) {
       const r = BOARD * Math.sqrt(Math.random())
@@ -286,7 +306,13 @@ function seedParticles(sim: Sim): void {
     }
     p[o + 2] = 0
     p[o + 3] = 0
+    if (recolor && sim.theme === 'voice') sim.bands[i] = sim.activeColorBand
   }
+}
+
+// 换盘形重撒：只重置位置，保留彩沙已锁定的颜色记忆
+function seedParticles(sim: Sim): void {
+  seedRange(sim, 0, sim.count, false)
 }
 
 function sampleField(sim: Sim, x: number, y: number): void {
@@ -324,7 +350,10 @@ function stepSim(sim: Sim): void {
   const pointer = sim.pointer
   const pointerOn = pointer.on && sim.interactive
   const radiusSq = POINTER_RADIUS * POINTER_RADIUS
-  for (let i = 0; i < sim.count; i += 1) {
+  const active = sim.activeCount
+  // voice 主题色桶在落沙时锁定，不随位置覆盖，保留不同时刻的声音色彩
+  const lockBands = sim.theme === 'voice'
+  for (let i = 0; i < active; i += 1) {
     const o = i * 4
     let x = p[o]
     let y = p[o + 1]
@@ -390,16 +419,40 @@ function stepSim(sim: Sim): void {
     p[o + 1] = y
     p[o + 2] = vx
     p[o + 3] = vy
-    const r2 = x * x + y * y
-    bands[i] = r2 < 0.36 ? 0 : r2 < 1.3 ? 1 : 2
+    if (!lockBands) {
+      const r2 = x * x + y * y
+      bands[i] = r2 < 0.36 ? 0 : r2 < 1.3 ? 1 : 2
+    }
   }
 }
 
 function drawParticles(sim: Sim): void {
-  const { ctx, w, h, count, particles: p, dpr } = sim
+  const { ctx, w, h, activeCount: count, particles: p, dpr } = sim
   if (w === 0 || h === 0) return
   const sx = w / 2
   const sy = h / 2
+  if (sim.theme === 'voice') {
+    const size = 1.5 * dpr
+    const half = size / 2
+    const fastSize = 2.2 * dpr
+    const fastHalf = fastSize / 2
+    // 四桶批绘制只切 4 次 fillStyle；高速粒子同桶内放大提亮，保留真沙微光
+    for (let band = 0; band < 4; band += 1) {
+      ctx.fillStyle = VOICE_BANDS[band]
+      for (let i = 0; i < count; i += 1) {
+        if (sim.bands[i] !== band) continue
+        const o = i * 4
+        const vx = p[o + 2]
+        const vy = p[o + 3]
+        if (vx * vx + vy * vy > 1e-4) {
+          ctx.fillRect(p[o] * sx + sx - fastHalf, p[o + 1] * sy + sy - fastHalf, fastSize, fastSize)
+        } else {
+          ctx.fillRect(p[o] * sx + sx - half, p[o + 1] * sy + sy - half, size, size)
+        }
+      }
+    }
+    return
+  }
   if (sim.theme === 'neon') {
     const size = 1.5 * dpr
     const half = size / 2
@@ -483,6 +536,7 @@ function frame(sim: Sim, now: number): void {
       sim.lowMs += dt
       if (sim.lowMs >= 1500 && sim.count > MIN_COUNT) {
         sim.count = Math.max(MIN_COUNT, (sim.count * 0.75) | 0)
+        sim.activeCount = Math.round(sim.count * sim.density)
         sim.lowMs = 0
       }
     } else {
@@ -493,7 +547,7 @@ function frame(sim: Sim, now: number): void {
   trailDraw(sim)
   if (now - sim.readoutAt > 500) {
     sim.readoutAt = now
-    sim.onReadout(Math.round(sim.fpsEma), sim.count)
+    sim.onReadout(Math.round(sim.fpsEma), sim.activeCount)
   }
   sim.raf = requestAnimationFrame((t) => frame(sim, t))
 }
@@ -503,16 +557,24 @@ function isMobileDevice(): boolean {
 }
 
 export const SandCanvas = forwardRef<SandCanvasHandle, SandCanvasProps>(function SandCanvas(
-  { pattern, theme, energy, interactive = false, className },
+  { pattern, theme, energy, interactive = false, className, density = 1, activeColorBand = 1 },
   ref,
 ) {
   const clampedEnergy = Math.min(1, Math.max(0, energy))
+  const clampedDensity = Math.min(1, Math.max(0.25, density))
   const key = patternKeyOf(pattern)
   const containerRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const simRef = useRef<Sim | null>(null)
   const [readout, setReadout] = useState({ fps: 0, count: 0 })
-  const initialProps = useRef({ pattern, theme, energy: clampedEnergy, interactive })
+  const initialProps = useRef({
+    pattern,
+    theme,
+    energy: clampedEnergy,
+    interactive,
+    density: clampedDensity,
+    activeColorBand,
+  })
 
   useEffect(() => {
     const container = containerRef.current
@@ -521,6 +583,7 @@ export const SandCanvas = forwardRef<SandCanvasHandle, SandCanvasProps>(function
     const ctx = canvas.getContext('2d')
     if (!ctx) return
     const init = initialProps.current
+    const deviceCount = isMobileDevice() ? MOBILE_COUNT : DESKTOP_COUNT
     const sim: Sim = {
       canvas,
       ctx,
@@ -533,7 +596,10 @@ export const SandCanvas = forwardRef<SandCanvasHandle, SandCanvasProps>(function
       reduced: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
       particles: new Float32Array(DESKTOP_COUNT * 4),
       bands: new Uint8Array(DESKTOP_COUNT),
-      count: isMobileDevice() ? MOBILE_COUNT : DESKTOP_COUNT,
+      count: deviceCount,
+      density: init.density,
+      activeCount: Math.round(deviceCount * init.density),
+      activeColorBand: init.activeColorBand,
       w: 0,
       h: 0,
       dpr: Math.min(window.devicePixelRatio || 1, 2),
@@ -548,7 +614,7 @@ export const SandCanvas = forwardRef<SandCanvasHandle, SandCanvasProps>(function
       onReadout: import.meta.env.DEV ? (fps, count) => setReadout({ fps, count }) : () => undefined,
     }
     simRef.current = sim
-    seedParticles(sim)
+    seedRange(sim, 0, sim.count)
 
     const resize = () => {
       const rect = container.getBoundingClientRect()
@@ -631,8 +697,26 @@ export const SandCanvas = forwardRef<SandCanvasHandle, SandCanvasProps>(function
     const sim = simRef.current
     if (!sim || sim.theme === theme) return
     sim.theme = theme
+    // 切入彩沙时以当前色桶为底色重新落沙，之后新粒随 density 增长带入新色
+    if (theme === 'voice') sim.bands.fill(sim.activeColorBand, 0, sim.count)
     cleanDraw(sim)
   }, [theme])
+
+  useEffect(() => {
+    const sim = simRef.current
+    if (!sim || sim.density === clampedDensity) return
+    const prev = sim.activeCount
+    sim.density = clampedDensity
+    sim.activeCount = Math.round(sim.count * clampedDensity)
+    if (sim.activeCount > prev) seedRange(sim, prev, sim.activeCount)
+    if (sim.reduced) settle(sim)
+  }, [clampedDensity])
+
+  useEffect(() => {
+    const sim = simRef.current
+    // 只更新当前色桶，不回写已落沙粒的颜色，保留彩沙记忆
+    if (sim) sim.activeColorBand = activeColorBand
+  }, [activeColorBand])
 
   useEffect(() => {
     const sim = simRef.current
@@ -648,7 +732,7 @@ export const SandCanvas = forwardRef<SandCanvasHandle, SandCanvasProps>(function
     const sim = simRef.current
     if (!sim) return
     const p = sim.particles
-    for (let i = 0; i < sim.count; i += 1) {
+    for (let i = 0; i < sim.activeCount; i += 1) {
       const o = i * 4
       p[o + 2] += p[o] * 0.06 + (Math.random() - 0.5) * 0.16
       p[o + 3] += p[o + 1] * 0.06 + (Math.random() - 0.5) * 0.16
@@ -725,7 +809,9 @@ export const SandCanvas = forwardRef<SandCanvasHandle, SandCanvasProps>(function
         <span className={`mono ${styles.readout}`}>
           n={pattern.n} m={pattern.m} · {theme} · E={clampedEnergy.toFixed(2)} ·{' '}
           {readout.fps > 0 ? `${readout.fps}FPS` : '静态'} ·{' '}
-          {readout.count || (isMobileDevice() ? MOBILE_COUNT : DESKTOP_COUNT)} 粒
+          {readout.count ||
+            Math.round((isMobileDevice() ? MOBILE_COUNT : DESKTOP_COUNT) * clampedDensity)}{' '}
+          粒
         </span>
       )}
     </div>

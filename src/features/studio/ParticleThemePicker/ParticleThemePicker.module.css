@@ -1,6 +1,6 @@
 .picker {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-3);
 }
 
@@ -62,6 +62,10 @@
 
 .neon {
   background: linear-gradient(135deg, #f72585, #9d4edd 45%, #56cfe1);
+}
+
+.voice {
+  background: conic-gradient(from 210deg, #f3c969, #56cfe1, #9d4edd, #fff2cc, #f3c969);
 }
 
 .label {

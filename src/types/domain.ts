@@ -1,6 +1,6 @@
 export type PitchLevel = 'low' | 'mid' | 'high'
 
-export type ParticleTheme = 'gold' | 'glacier' | 'neon'
+export type ParticleTheme = 'gold' | 'glacier' | 'neon' | 'voice'
 
 export type InputMode = 'slider' | 'mic'
 

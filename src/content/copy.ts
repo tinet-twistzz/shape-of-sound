@@ -123,6 +123,7 @@ export const copy = {
         gold: '金色细沙',
         glacier: '冰川蓝',
         neon: '霓虹彩霞',
+        voice: '随声彩沙',
       },
       authorLabel: '署名',
       authorPlaceholder: '写下你的名字（可留空）',
