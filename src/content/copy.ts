@@ -275,10 +275,6 @@ export const copy = {
       sandToolsAria: '沙盘仪器工具',
       scatterLabel: '摇散重聚',
       scatterAria: '摇散沙粒，让它们重新聚向波节线',
-      pinModeLabel: '指尖制音',
-      pinModeAria: '切换指尖制音模式，开启后点击沙盘钉出静止波节',
-      pinHint: '点击盘内任意位置，像克拉尼一样用指尖按出波节',
-      pinRemoveAria: '拔除这枚制音钉',
       frequencyTones: {
         thunder: '低沉如滚雷',
         whale: '悠远如鲸歌',

@@ -119,7 +119,7 @@ const VOICE_BANDS = [
 
 // 统一有向距离场：盘内 < 0、边缘 = 0、盘外 > 0。
 // 六角/三角用凸多边形半平面距离（内部与近边处精确），数值法线反弹对所有形状通用
-export function plateSignedDist(x: number, y: number, shape: PlateShape): number {
+function plateSignedDist(x: number, y: number, shape: PlateShape): number {
   switch (shape) {
     case 'circle':
       return Math.sqrt(x * x + y * y) - PLATE_R

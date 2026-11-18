@@ -14,8 +14,3 @@ export function timbreToB(timbre: number): number {
   const clamped = Math.min(TIMBRE_MAX, Math.max(TIMBRE_MIN, timbre))
   return round2(-TIMBRE_B_SPAN * clamped)
 }
-
-export function bToTimbre(b: number): number {
-  const clamped = Math.min(TIMBRE_B_SPAN, Math.max(-TIMBRE_B_SPAN, b))
-  return round2(-clamped / TIMBRE_B_SPAN)
-}

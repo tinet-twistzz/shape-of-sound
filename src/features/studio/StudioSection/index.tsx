@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react'
+import type { ReactNode } from 'react'
 
 import { Section } from '@/components/layout/Section'
-import { SandCanvas, plateSignedDist } from '@/components/sand/SandCanvas'
+import { SandCanvas } from '@/components/sand/SandCanvas'
 import type { SandCanvasHandle } from '@/components/sand/SandCanvas'
 import { Button } from '@/components/ui/Button'
 import { SectionHeader } from '@/components/ui/SectionHeader'
@@ -33,7 +33,6 @@ import { chordBOffset, chordSecondary, chordTwist } from '../chordMeta'
 import { describeFrequency, energyForFrequency, previewWaveform } from '../frequencyMeta'
 import { LONG_MAX_SECONDS, LONG_MIN_SECONDS, compressTimeline } from '../longSoundCompression'
 import type { LongSoundSample, TimelineSlice } from '../longSoundCompression'
-import { solvePinTimbre } from '../pinNode'
 import { DEFAULT_TIMBRE, timbreToB } from '../timbreMeta'
 import { analyzeUtterance } from '../utteranceAnalysis'
 import type { UtteranceResult, UtteranceSample } from '../utteranceAnalysis'
@@ -94,8 +93,6 @@ export function StudioSection() {
   const [colorBand, setColorBand] = useState<0 | 1 | 2 | 3>(1)
   const [timbre, setTimbre] = useState(DEFAULT_TIMBRE)
   const [chord, setChord] = useState<ResonanceChord>('solo')
-  const [pinMode, setPinMode] = useState(false)
-  const [pin, setPin] = useState<{ x: number; y: number } | null>(null)
   const [busy, setBusy] = useState<SignatureBusy>(null)
   const [publishOpen, setPublishOpen] = useState(false)
   const voiceChargeRef = useRef(0)
@@ -416,10 +413,6 @@ export function StudioSection() {
   }, [])
 
   const handleModeChange = (mode: InputMode) => {
-    if (mode !== 'slider') {
-      setPinMode(false)
-      setPin(null)
-    }
     actions.setInputMode(mode)
   }
 
@@ -439,8 +432,6 @@ export function StudioSection() {
   }
 
   const handleTimbreChange = (value: number) => {
-    // 手动调音色即从指尖制音钉接管耦合比控制权
-    setPin(null)
     setTimbre(value)
   }
 
@@ -452,51 +443,6 @@ export function StudioSection() {
     setChord(next)
     audioEngine.playTone(frequencyHz, { timbre, chord: next })
   }
-
-  const handlePinToggle = () => {
-    setPinMode((on) => !on)
-    setPin(null)
-  }
-
-  const handlePinPlace = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!pinMode || inputMode !== 'slider') return
-    const rect = event.currentTarget.getBoundingClientRect()
-    if (rect.width === 0 || rect.height === 0) return
-    const x = ((event.clientX - rect.left) / rect.width) * 2 - 1
-    const y = ((event.clientY - rect.top) / rect.height) * 2 - 1
-    if (plateSignedDist(x, y, plateShape) > -0.02) return
-    const base = patternMapper.frequencyToPattern(frequencyHz)
-    const solved = solvePinTimbre(
-      x,
-      y,
-      base.n,
-      base.m,
-      plateShape,
-      chordTwist(chord),
-      chordBOffset(chord),
-    )
-    setPin({ x, y })
-    if (solved !== null) {
-      setTimbre(solved)
-      audioEngine.playTone(frequencyHz, { timbre: solved, chord })
-    }
-  }
-
-  // 制音钉按住期间，频率 / 盘形 / 和弦变化时反解保持指尖点仍为静止波节
-  useEffect(() => {
-    if (!pin || inputMode !== 'slider') return
-    const base = patternMapper.frequencyToPattern(frequencyHz)
-    const solved = solvePinTimbre(
-      pin.x,
-      pin.y,
-      base.n,
-      base.m,
-      plateShape,
-      chordTwist(chord),
-      chordBOffset(chord),
-    )
-    if (solved !== null) setTimbre(solved)
-  }, [pin, inputMode, frequencyHz, plateShape, chord, patternMapper])
 
   const currentDensity = inputMode === 'mic' && theme === 'voice' ? voiceDensity : 1
 
@@ -616,16 +562,13 @@ export function StudioSection() {
       <div className={styles.layout}>
         <div className={styles.stage}>
           <div className={styles.stageSticky}>
-            <div
-              className={`${styles.stageCanvas} ${pinMode ? styles.stageCanvasPin : ''}`}
-              onPointerDown={handlePinPlace}
-            >
+            <div className={styles.stageCanvas}>
               <SandCanvas
                 ref={sandRef}
                 pattern={pattern}
                 theme={theme}
                 energy={energy}
-                interactive={!pinMode}
+                interactive
                 density={inputMode === 'mic' && theme === 'voice' ? voiceDensity : 1}
                 activeColorBand={colorBand}
               />
@@ -644,32 +587,7 @@ export function StudioSection() {
                 >
                   {t.scatterLabel}
                 </button>
-                {inputMode === 'slider' && (
-                  <button
-                    type="button"
-                    className={`${styles.sandTool} ${pinMode ? styles.sandToolOn : ''}`}
-                    aria-pressed={pinMode}
-                    aria-label={t.pinModeAria}
-                    onClick={handlePinToggle}
-                  >
-                    {t.pinModeLabel}
-                  </button>
-                )}
               </div>
-              {pinMode && pin && (
-                <button
-                  type="button"
-                  className={styles.pinMark}
-                  style={{
-                    left: `${((pin.x + 1) / 2) * 100}%`,
-                    top: `${((pin.y + 1) / 2) * 100}%`,
-                  }}
-                  aria-label={t.pinRemoveAria}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onClick={() => setPin(null)}
-                />
-              )}
-              {pinMode && <p className={styles.pinHint}>{t.pinHint}</p>}
             </div>
             <div className={`mono ${styles.status}`} aria-live="polite">
               {longPhase === 'recording' ? (

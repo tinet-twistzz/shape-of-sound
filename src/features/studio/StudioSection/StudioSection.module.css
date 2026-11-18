@@ -16,10 +16,6 @@
   margin-inline: auto;
 }
 
-.stageCanvasPin {
-  cursor: crosshair;
-}
-
 /* ---------- 沙盘角落仪器工具条（DOM 叠层，不进入画布导出像素） ---------- */
 .sandTools {
   position: absolute;
@@ -61,70 +57,6 @@
 .sandTool:disabled {
   opacity: 0.4;
   cursor: default;
-}
-
-.sandToolOn {
-  color: var(--color-gold);
-  border-color: var(--color-gold-dim);
-  box-shadow: 0 0 10px rgba(243, 201, 105, 0.25);
-}
-
-/* ---------- 指尖制音钉：金色细线圆环 + 十字 ---------- */
-.pinMark {
-  position: absolute;
-  z-index: 2;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  transform: translate(-50%, -50%);
-  border: 1px solid var(--color-gold);
-  border-radius: var(--radius-full);
-  background: transparent;
-  box-shadow: 0 0 10px rgba(243, 201, 105, 0.45);
-  cursor: pointer;
-}
-
-.pinMark::before,
-.pinMark::after {
-  content: '';
-  position: absolute;
-  background: var(--color-gold);
-}
-
-.pinMark::before {
-  left: 50%;
-  top: -5px;
-  bottom: -5px;
-  width: 1px;
-  transform: translateX(-50%);
-}
-
-.pinMark::after {
-  top: 50%;
-  left: -5px;
-  right: -5px;
-  height: 1px;
-  transform: translateY(-50%);
-}
-
-.pinMark:focus-visible {
-  outline: none;
-  box-shadow:
-    0 0 0 2px var(--color-gold),
-    var(--glow-gold);
-}
-
-.pinHint {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: var(--space-2);
-  z-index: 2;
-  text-align: center;
-  font-size: var(--text-xs);
-  letter-spacing: var(--tracking-wide);
-  color: var(--color-gold-dim);
-  pointer-events: none;
 }
 
 /* ---------- 沙盘下方读数 ---------- */
