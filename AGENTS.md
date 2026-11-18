@@ -11,14 +11,14 @@
 页面按展厅顺序由上至下编排（另配右侧科普抽屉）：
 - `hero`：**序厅**（全屏背景沙盘 + 展签式导览入口）
 - `gallery`：**HALL 01 · 声形画廊**（8 件真实声学/乐器采样试听 + 实时沙盘 + 展签）
-- `quiz`：**HALL 02 · 寻声猜形**（6 道盲听辨形题 + 图鉴收集，独立 7 首采样池）
-- `studio`：**HALL 03 · 声绘工坊**（滑杆调频 / 麦克风实时随动 / 2.5s 一句话声纹画像 / 3–20s 长声音年轮与多重曝光压缩 / 四种共振盘形状 / 四种沙粒色泽 / 拍立得典藏卡导出 / 展厅发布）
-- `exhibition`：**HALL 04 · 艺术展厅**（云端「公共展厅」分页浏览 + 本机 IndexedDB「我的展厅」+ `ReplayModal` 粒子原貌复活重放）
+- `quiz`：**HALL 02 · 寻声猜形**（6 道盲听辨形题 + 图鉴收集，独立 7 首采样池；目标图案卡已改用实时 `SandCanvas` 渲染）
+- `studio`：**HALL 03 · 声绘工坊**（滑杆调频 / 音色形态滑杆 / 五档共鸣和弦 / 麦克风实时随动 / 2.5s 一句话声纹画像 / 3–20s 长声音年轮与多重曝光压缩 / 四种共振盘形状 / 四种沙粒色泽 / 四种显影材质 / 沙盘「摇散重聚」工具 / 拍立得典藏卡导出 / 展厅发布）
+- `exhibition`：**HALL 04 · 艺术展厅**（云端「公共展厅」上一页/下一页分页浏览 + 本机 IndexedDB「我的展厅」+ `ReplayModal` 粒子原貌复活重放，`createPortal` 渲染）
 - `PrincipleDrawer`：**声形之理**（5 章科普手册抽屉，含「学霸模式」折叠注释）
 
 ### 重要上下文纠偏（必读）
 1. **切勿按 `sepc.md` 回退功能**：根目录下的 `sepc.md`（原文件名如此）是项目骨架期的早期文档，其中「禁止实现粒子物理、Canvas、Web Audio、麦克风、FFT、图片导出」的限制**早已过期**；上述能力均已在生产代码中完整实现。
-2. **当前分支与未提交现场（`feat/store`）**：当前工作区正在开发/完善 **HALL 04 艺术展厅、作品发布弹窗、典藏卡导出与后端云函数**（涉及 `src/features/exhibition/`、`src/features/studio/PublishDialog/`、`src/services/real/{galleryService,localGallery,canvasArtworkExporter}.ts`、`functions/`、`dev/gallery-preview/` 等）。接手新任务前先跑 `git status` 确认未提交改动，勿随意回滚或格式化无关文件。
+2. **分支与并行 Session 现场**：展厅、工坊与后端云函数均已合入 `main` 并通过 Qoder Sites 发布上线。可能存在**多个 Session 共用同一工作目录与分支**的情况：接手新任务前先跑 `git status`，只暂存/提交本 Session 修改的文件，勿对共享文件执行 `git restore`/`checkout`，勿随意回滚或格式化无关文件。
 
 ---
 
@@ -64,20 +64,20 @@ node dev/gallery-preview/smoke.mjs
 │   │   ├── providers.tsx            # Provider 嵌套：ServiceProvider -> AppStateProvider -> ToastProvider
 │   │   └── App.tsx                  # 单页五展厅顺序编排 + useScrollSpy 同步导航高亮 + PrincipleDrawer
 │   ├── types/
-│   │   ├── domain.ts                # 核心领域类型（PatternParams, SoundPreset, Artwork, ReplayMeta 等）
-│   │   └── services.ts              # 7 大服务接口契约（Services）与展厅 DTO
+│   │   ├── domain.ts                # 核心领域类型（PatternParams 含 medium/secondary/twist, ResonanceChord, SoundPreset, Artwork, ReplayMeta 等）
+│   │   └── services.ts              # 7 大服务接口契约（Services）、ToneOptions 与展厅 DTO
 │   ├── store/
 │   │   ├── appStateContext.ts       # State / Actions 双 Context 分离定义与 hooks
-│   │   └── AppStateProvider.tsx     # useReducer 状态机，同步 muted 到 audioEngine
+│   │   └── AppStateProvider.tsx     # useReducer 状态机，同步 muted 到 audioEngine；galleryVersion 驱动展厅刷新
 │   ├── services/
 │   │   ├── ServiceProvider.tsx      # 依赖注入组装：createMockServices() 打底 + real 实现覆盖
 │   │   ├── mock/                    # Mock 实现（目前仅 mockDataSource 与 mockQuizService 仍在生产生效）
 │   │   └── real/
-│   │       ├── webAudioEngine.ts        # Web Audio 采样缓存解码播放 + 基频/泛音合成器 + 平滑淡入淡出
-│   │       ├── webMicInput.ts           # getUserMedia + AnalyserNode + 自相关基频检测（中值+EMA平滑）+ 明亮度计算
-│   │       ├── chladniPatternMapper.ts  # 80–2600Hz 对数映射到 15 组 (n, m) 模态表
+│   │       ├── webAudioEngine.ts        # Web Audio 采样缓存解码播放 + 基频/泛音合成器 + ToneOptions（音色泛音/逐音色滤波/和弦双音，总增益归一化）+ 平滑淡入淡出
+│   │       ├── webMicInput.ts           # getUserMedia + AnalyserNode + 自相关基频检测（中值+EMA平滑）+ 明亮度/频谱质心计算
+│   │       ├── chladniPatternMapper.ts  # 80–2600Hz 对数映射 15 组模态 + 连续模态耦合（b 正负摆动）+ 人声频段映射 + centroidToB
 │   │       ├── canvasArtworkExporter.ts # 1080×1360 黑金拍立得典藏卡 Canvas 2D 合成与 PNG 触发下载
-│   │       ├── galleryService.ts        # 公共展厅 HTTP 客户端（/functions/v1/app/api/artworks）
+│   │       ├── galleryService.ts        # 公共展厅 HTTP 客户端（/functions/v1/app/api/artworks，双对象并行上传）
 │   │       └── localGallery.ts          # 本机「我的展厅」IndexedDB 封装（DB: shape-of-sound, Store: artworks）
 │   ├── components/
 │   │   ├── sand/
@@ -89,7 +89,7 @@ node dev/gallery-preview/smoke.mjs
 │   │   ├── hero/                    # 序厅
 │   │   ├── gallery/                 # HALL 01 声形画廊
 │   │   ├── quiz/                    # HALL 02 寻声猜形
-│   │   ├── studio/                  # HALL 03 声绘工坊（含 utteranceAnalysis.ts、longSoundCompression.ts）
+│   │   ├── studio/                  # HALL 03 声绘工坊（utteranceAnalysis.ts、longSoundCompression.ts、timbreMeta.ts、chordMeta.ts、TimbreSlider、ChordSelector、MediumPicker）
 │   │   ├── exhibition/              # HALL 04 艺术展厅（ExhibitionSection, ArtworkCard, ReplayModal）
 │   │   └── principle/               # 声形之理科普抽屉
 │   ├── data/mock/                   # 静态展品数据（指向 public/sounds/*.m4a）、题库、原理章节文本
@@ -110,6 +110,9 @@ node dev/gallery-preview/smoke.mjs
 ### 4.1 `SandCanvas` 物理与渲染架构 (`src/components/sand/SandCanvas/index.tsx`)
 - **驻波场查找表**：模态变化时在 `128×128` 网格上预计算振幅 `amp` 与归一化负梯度 `(dirX, dirY)`，每帧粒子循环只做双线性插值与乘加，**严禁在 `stepSim` / `drawParticles` 热路径内调用三角函数或分配临时对象**。
 - **盘形与模式**：支持 `square`、`circle`、`hexagon`、`triangle`（统一由有向距离场 `plateSignedDist` 处理边界反弹）；当 `compressionMode === 'rings'`（声音年轮）时，`effectiveShape` 强制按 `circle` 处理。
+- **显影材质（`MEDIUM_PHYSICS`）**：`sand` / `mercury` / `filings` / `spores` 四种介质，各自独立的阻尼、静置阻尼、抖动、迁移与拖尾渲染参数；与沙粒色泽（`theme`）正交，任意组合。
+- **扭转场（`PatternParams.twist ∈ [-1, 1]`）**：方盘附加反对称奇函数项 `twist·(sin πnx·sin πmy − sin πmx·sin πny)`；圆盘按 `twist·0.85·r` 随半径偏转相位；六角/三角盘旋转三平面波方向（`twist·0.6`）。用于「奇异拍频」和弦的涡旋节线。
+- **防闪烁**：图案参数变化且盘形不变时只重建 `sim.field` 查找表、不清屏重撒粒子，保留已有沙粒拖尾。
 - **彩沙记忆（`theme === 'voice'`）**：粒子落盘时锁定当前 `activeColorBand`（`0..3`），后续随声音增强通过提升 `density`（`0.3 -> 1.0`）唤醒更多新色沙粒，不覆盖已有沙粒颜色。
 - **性能自保**：桌面端初始 `30,000` 粒、移动端 `7,000` 粒；FPS EMA 连续 1.5s 低于 45 时阶梯削减 25%（下限 `3,000`）；依赖 `IntersectionObserver`、`document.hidden` 与 `prefers-reduced-motion` 自动启停或直接静态 `settle()`。
 
@@ -128,6 +131,14 @@ node dev/gallery-preview/smoke.mjs
 1. `POST /functions/v1/app/api/artworks`：校验元数据，顺带清理超 24h 的 `pending` 记录，检查总记录 `< 500`，插入 `status: 'pending'` 并签发 `imageUpload` / `stateUpload` URL（`upsert: false`，同一路径不可覆盖重传）。
 2. `PUT <signedUrl>`：上传 `600×600` WebP 快照（`<= 300KB`，`Content-Type: image/webp`）与 `.state` 二进制（`Content-Type: application/octet-stream`）。
 3. `POST /functions/v1/app/api/artworks/:id/complete`：服务端流式有界读取两个对象，校验 MIME、字节上限与 `SND1` 结构后将状态更新为 `'ready'`。
+
+> 两个签名 URL 在创建时同时签发（有效期约 60s），前端用 `Promise.all` 并行上传以缩短总耗时，避免慢网下第二个 token 过期。
+> 公共展厅列表后端固定 `PAGE = 20`（`routes.mjs`），前端为上一页/下一页导航；工坊发布/下载成功后经 `AppState.galleryVersion` 自增触发 `ExhibitionSection` 两个页签重新拉取。
+
+### 4.4 耦合比 b 与和弦副模态（工坊操控自由度）
+- `PatternParams.b` 是经典克拉尼方程的耦合比：`+1` 平行波纹、`0` 闭合圆岛、`−1` 放射斜十字。扫频映射中 b 随频段位置以 `1.25·sin` 周期摆动（连续模态耦合，消除模态跳变突兀感）；人声路径由频谱质心经 `centroidToB` 映射；工坊滑杆模式下由「音色形态」滑杆直接控制（`timbreMeta.ts`：`b = −1.25·timbre`，默认 `timbre = 0.8` 即经典 `b = −1`）。
+- 「共鸣和弦」（`chordMeta.ts`）按频率比派生副模态 `secondary = { n: round(n·ratio), m: round(m·ratio)（相等时 +1）, weight }`：纯八度 2:1 / 0.38、纯五度 3:2 / 0.45、大三度 5:4 / 0.32（另加 `bOffset +0.18`）、奇异拍频 √2:1（`twist = 0.65`）。后端 `cleanPattern` 校验 `a/b ∈ [-2, 2]`、`twist ∈ [-1, 1]`、`secondary.weight ∈ [0, 1]`。
+- 音频侧 `playTone(hz, { timbre, chord })`（`ToneOptions`）：timbre 控制泛音列强度与逐音色低通亮度，chord 叠加第二个比率音；总增益按泛音+和弦电平归一化防削波；不传 options 的旧调用路径行为不变。
 
 ---
 
@@ -154,19 +165,16 @@ node dev/gallery-preview/smoke.mjs
 
 ## 6. 代码审查已知问题与技术债（供后续 Session 跟进）
 
-1. **工坊发布/下载后展厅列表不自动刷新**：
-   `StudioSection` 与 `ExhibitionSection` 同屏挂载于 `App.tsx`。用户在工坊完成「发布到展厅」或「下载典藏卡（写入 `localGallery`）」后向下滚动至 `ExhibitionSection`，因 `tab` 未切换，公共展厅与我的展厅不会重新拉取最新数据。建议在 `AppState` 或轻量事件总线上增加展厅刷新版本号。
-2. **不支持 WebP 编码环境的发布兼容隐患**：
-   `SandCanvas.snapshotScaled()` 调用 `off.toBlob(..., 'image/webp', 0.85)`；若旧版 WebKit 回退产出 `image/png`，`galleryService.publish()` 仍按 `'image/webp'` 上传，且 PNG 粒子图易超出服务端 `300KB` 限制而在 `/complete` 阶段返回 `422 invalid_upload`。
-3. **非正方形容器下 `SandCanvas` 盘框与粒子坐标比例失配**：
+1. **不支持 WebP 编码环境的发布兼容隐患**：
+   `SandCanvas.snapshotScaled()` 调用 `off.toBlob(..., 'image/webp', 0.85)`；若旧版 WebKit 回退产出 `image/png`，`galleryService.publish()` 仍按 `'image/webp'` 硬编码上传，且 PNG 粒子图易超出服务端 `300KB` 限制而在 `/complete` 阶段返回 `422 invalid_upload`。（上传竞态已修复：双对象改为 `Promise.all` 并行上传。）
+2. **非正方形容器下 `SandCanvas` 盘框与粒子坐标比例失配**：
    `drawParticles` 按画布半宽 `w/2`、半高 `h/2` 独立映射坐标，而 `buildPlatePath` 按 `Math.min(w, h) / 2` 等比绘制盘框；在 `HeroSection` 等长方形视口中粒子会溢出暗金盘框。
-4. **`PatternThumbnail` 仅支持基础方盘方程**：
-   `PatternThumbnail` 未实现 `plateShape`（圆/六角/三角）、`secondary` 与 `timelineSlices` 渲染；目前仅用于画廊预设与猜形题库（均为基础方盘），若复用于异形盘作品缩略图将失真。
-5. **移动端重放桌面端作品时的粒子数突增**：
+3. **`PatternThumbnail` 仅支持基础方盘方程**：
+   `PatternThumbnail` 未实现 `plateShape`（圆/六角/三角）、`secondary`、`twist` 与 `timelineSlices` 渲染；猜形目标卡已改用实时 `SandCanvas`，目前它仅服务画廊预设（基础方盘），若复用于异形盘/副模态作品缩略图将失真。
+4. **移动端重放桌面端作品时的粒子数突增**：
    `SandCanvas.loadState()` 会将桌面端导出的 `30,000` 粒直接赋给 `sim.count / activeCount`，绕过移动端初始 `7,000` 粒上限（需等待 1.5s 低帧率检测才逐步削减）。
-6. **弹层焦点管理不一致**：
-   `Drawer` 具备完整的正反向 `Tab` 焦点陷阱与滚动锁定，但 `TopNav` 移动端菜单未拦截 `Shift+Tab`，`PublishDialog` 与 `ReplayModal` 尚未补充 `Tab` 焦点圈定（`PublishDialog` 亦未锁定 `body` 滚动）。
-7. **杂项清理与文案同步**：
-   - `src/content/copy.ts` 页脚 `footer.note` 仍写「粒子为占位实现」，`README.md` 仍写「四个展厅」，需与现状同步。
-   - `.gitignore` 建议补充 `dev/gallery-preview/objects/`（或区分种子数据与临时测试产物），并确认 `.Shape of Sound.qoder.site` 是否纳入版本控制。
-   - 当前存量代码有 35 个文件存在 Prettier 格式差异（`npm run format:check`），可在独立整理提交中统一格式化。
+5. **弹层焦点管理不一致**：
+   `Drawer` 具备完整的正反向 `Tab` 焦点陷阱与滚动锁定；`ReplayModal` 已改为 `createPortal` 渲染但仍未做 `Tab` 焦点圈定；`TopNav` 移动端菜单未拦截 `Shift+Tab`；`PublishDialog` 未补充焦点圈定，亦未锁定 `body` 滚动。
+6. **杂项清理与文案同步**：
+   - `README.md` 仍写「四个展厅」，需与现状同步（页脚占位文案已移除；`.gitignore` 已含 `dev/` 与 `*.qoder.site`，站点描述符有意不入库）。
+   - 当前存量代码有 43 个文件存在 Prettier 格式差异（`npm run format:check`），可在独立整理提交中统一格式化。
