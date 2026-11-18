@@ -645,87 +645,89 @@ export function StudioSection() {
             </span>
           </header>
 
-          <ConsoleGroup index="01" title={t.groupInput} en={t.groupInputEn}>
-            <InputModeSwitch value={inputMode} onChange={handleModeChange} />
-          </ConsoleGroup>
+          <div className={styles.consoleBody}>
+            <ConsoleGroup index="01" title={t.groupInput} en={t.groupInputEn}>
+              <InputModeSwitch value={inputMode} onChange={handleModeChange} />
+            </ConsoleGroup>
 
-          <ConsoleGroup index="02" title={t.groupSignal} en={t.groupSignalEn}>
-            {inputMode === 'slider' ? (
-              <>
-                <FrequencySlider
-                  value={frequencyHz}
-                  onChange={actions.setFrequency}
-                  onCommit={handleCommit}
+            <ConsoleGroup index="02" title={t.groupSignal} en={t.groupSignalEn}>
+              {inputMode === 'slider' ? (
+                <>
+                  <FrequencySlider
+                    value={frequencyHz}
+                    onChange={actions.setFrequency}
+                    onCommit={handleCommit}
+                  />
+                  <TimbreSlider
+                    value={timbre}
+                    onChange={handleTimbreChange}
+                    onCommit={handleTimbreCommit}
+                  />
+                  <ChordSelector value={chord} onChange={handleChordChange} />
+                </>
+              ) : (
+                <MicPanel
+                  status={micStatus}
+                  capturePhase={capturePhase}
+                  secondsLeft={secondsLeft}
+                  report={utterance?.report ?? null}
+                  longPhase={longPhase}
+                  longElapsed={longElapsed}
+                  longDuration={longDuration}
+                  compressionMode={compressionMode}
+                  onStart={handleRealtimeStart}
+                  onStop={stopMic}
+                  onCapture={() => {
+                    void startCapture()
+                  }}
+                  onStartLong={() => {
+                    void startLong()
+                  }}
+                  onFinishLong={handleFinishLong}
+                  onCompressionModeChange={setCompressionMode}
+                  onResetLong={resetLong}
+                  onBackToSlider={() => handleModeChange('slider')}
                 />
-                <TimbreSlider
-                  value={timbre}
-                  onChange={handleTimbreChange}
-                  onCommit={handleTimbreCommit}
-                />
-                <ChordSelector value={chord} onChange={handleChordChange} />
-              </>
-            ) : (
-              <MicPanel
-                status={micStatus}
-                capturePhase={capturePhase}
-                secondsLeft={secondsLeft}
-                report={utterance?.report ?? null}
-                longPhase={longPhase}
-                longElapsed={longElapsed}
-                longDuration={longDuration}
-                compressionMode={compressionMode}
-                onStart={handleRealtimeStart}
-                onStop={stopMic}
-                onCapture={() => {
-                  void startCapture()
-                }}
-                onStartLong={() => {
-                  void startLong()
-                }}
-                onFinishLong={handleFinishLong}
-                onCompressionModeChange={setCompressionMode}
-                onResetLong={resetLong}
-                onBackToSlider={() => handleModeChange('slider')}
-              />
-            )}
-            <div className={styles.monitor}>
-              <div className={styles.monitorHead}>
-                <span className={`mono ${styles.monitorLabel}`}>{t.monitorLabel}</span>
-                <span
-                  className={`mono ${styles.monitorState} ${listening ? styles.monitorLive : ''}`}
-                >
-                  {listening
-                    ? t.monitorLive
-                    : inputMode === 'slider'
-                      ? t.monitorPreview
-                      : t.monitorIdle}
-                </span>
+              )}
+              <div className={styles.monitor}>
+                <div className={styles.monitorHead}>
+                  <span className={`mono ${styles.monitorLabel}`}>{t.monitorLabel}</span>
+                  <span
+                    className={`mono ${styles.monitorState} ${listening ? styles.monitorLive : ''}`}
+                  >
+                    {listening
+                      ? t.monitorLive
+                      : inputMode === 'slider'
+                        ? t.monitorPreview
+                        : t.monitorIdle}
+                  </span>
+                </div>
+                <WaveIndicator waveform={waveform} live={listening} />
               </div>
-              <WaveIndicator waveform={waveform} live={listening} />
-            </div>
-          </ConsoleGroup>
+            </ConsoleGroup>
 
-          <ConsoleGroup index="03" title={t.groupPlate} en={t.groupPlateEn}>
-            <PlateShapePicker value={plateShape} onChange={handlePlateShape} />
-          </ConsoleGroup>
+            <ConsoleGroup index="03" title={t.groupPlate} en={t.groupPlateEn}>
+              <PlateShapePicker value={plateShape} onChange={handlePlateShape} />
+            </ConsoleGroup>
 
-          <ConsoleGroup index="04" title={t.themeLabel} en={t.groupPaletteEn}>
-            <ParticleThemePicker value={theme} onChange={actions.setTheme} />
-          </ConsoleGroup>
+            <ConsoleGroup index="04" title={t.themeLabel} en={t.groupPaletteEn}>
+              <ParticleThemePicker value={theme} onChange={actions.setTheme} />
+            </ConsoleGroup>
 
-          <ConsoleGroup index="05" title={t.mediumLabel} en={t.groupMediumEn}>
-            <MediumPicker value={medium} onChange={setMedium} />
-          </ConsoleGroup>
+            <ConsoleGroup index="05" title={t.mediumLabel} en={t.groupMediumEn}>
+              <MediumPicker value={medium} onChange={setMedium} />
+            </ConsoleGroup>
 
-          <ConsoleGroup index="06" title={t.groupSignature} en={t.groupSignatureEn}>
-            <SignatureForm
-              author={author}
-              onAuthorChange={actions.setAuthor}
-              onDownload={() => void handleDownload()}
-              onPublish={() => setPublishOpen(true)}
-              busy={busy}
-            />
-          </ConsoleGroup>
+            <ConsoleGroup index="06" title={t.groupSignature} en={t.groupSignatureEn}>
+              <SignatureForm
+                author={author}
+                onAuthorChange={actions.setAuthor}
+                onDownload={() => void handleDownload()}
+                onPublish={() => setPublishOpen(true)}
+                busy={busy}
+              />
+            </ConsoleGroup>
+          </div>
         </div>
       </div>
 

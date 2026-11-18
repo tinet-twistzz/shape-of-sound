@@ -266,11 +266,12 @@
   text-shadow: 0 0 8px rgba(86, 207, 225, 0.6);
 }
 
-/* ---------- 宽屏：左右双栏，沙盘随滚动驻留 ---------- */
+/* ---------- 宽屏：左右双栏同高，控制台在面板内滚动，沙盘始终对齐可见 ---------- */
 @media (min-width: 1200px) {
   .layout {
     grid-template-columns: minmax(0, 10fr) minmax(0, 9fr);
     gap: var(--space-7);
+    align-items: stretch;
   }
 
   .stageSticky {
@@ -280,6 +281,42 @@
 
   .stageCanvas {
     max-width: none;
+  }
+
+  /* height:0 + min-height:100% 让控制台不撑高网格行，行高由左侧沙盘决定 */
+  .console {
+    display: flex;
+    flex-direction: column;
+    height: 0;
+    min-height: 100%;
+  }
+
+  .consoleBody {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-gold-dim) transparent;
+  }
+
+  .consoleBody::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  .consoleBody::-webkit-scrollbar-track {
+    background: transparent;
+    border-left: 1px solid var(--color-border-subtle);
+  }
+
+  .consoleBody::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, var(--color-gold-dim), rgba(243, 201, 105, 0.3));
+    border-radius: var(--radius-full);
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+
+  .consoleBody::-webkit-scrollbar-thumb:hover {
+    background: var(--color-gold);
   }
 }
 
