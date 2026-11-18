@@ -116,8 +116,13 @@ export const canvasArtworkExporter: ArtworkExporter = {
     ctx.fillStyle = GOLD_DIM
     ctx.font = `400 22px ${MONO}`
     const themeLabel = copy.sections.studio.themes[artwork.theme]
+    const mediumLabel = copy.sections.studio.mediums[artwork.pattern.medium ?? 'sand']
     ctx.fillText(
-      fitText(ctx, `${Math.round(artwork.frequencyHz)} HZ · ${themeLabel} · CHLADNI PLATE`, 800),
+      fitText(
+        ctx,
+        `${Math.round(artwork.frequencyHz)} HZ · ${themeLabel} · ${mediumLabel} · CHLADNI PLATE`,
+        800,
+      ),
       80,
       1262,
     )

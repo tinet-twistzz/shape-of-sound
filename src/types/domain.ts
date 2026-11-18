@@ -2,6 +2,9 @@ export type PitchLevel = 'low' | 'mid' | 'high'
 
 export type ParticleTheme = 'gold' | 'glacier' | 'neon' | 'voice'
 
+/** 显影材质：矿物细沙 / 声流液银 / 织金磁丝 / 极光孢子，与色泽正交组合 */
+export type ParticleMedium = 'sand' | 'mercury' | 'filings' | 'spores'
+
 export type InputMode = 'slider' | 'mic'
 
 export type MicStatus = 'idle' | 'requesting' | 'listening' | 'denied' | 'unsupported'
@@ -19,6 +22,8 @@ export interface PatternParams {
   a?: number
   b?: number
   plateShape?: PlateShape
+  /** 显影材质，缺省 'sand'，保证旧作品与题库兼容 */
+  medium?: ParticleMedium
   /** 语气起伏明显时叠加的第二层花纹 */
   secondary?: { n: number; m: number; weight: number }
   /** 反对称扭转度 [-1, 1]：0 为纯偶函数镜像驻波，非 0 混入奇函数项形成风车 / 涡旋节线 */

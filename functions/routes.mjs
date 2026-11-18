@@ -10,6 +10,7 @@ export function application({ db, storage, BackendError }) {
   const PENDING_TTL_MS = 24 * 60 * 60 * 1000
   const THEMES = ['gold', 'glacier', 'neon', 'voice']
   const SHAPES = ['square', 'circle', 'hexagon', 'triangle']
+  const MEDIA = ['sand', 'mercury', 'filings', 'spores']
   const SOURCES = ['slider', 'mic']
 
   const fail = (code, status) => {
@@ -77,6 +78,10 @@ export function application({ db, storage, BackendError }) {
     if (p.plateShape !== undefined) {
       if (!SHAPES.includes(p.plateShape)) fail('invalid_input', 400)
       out.plateShape = p.plateShape
+    }
+    if (p.medium !== undefined) {
+      if (!MEDIA.includes(p.medium)) fail('invalid_input', 400)
+      out.medium = p.medium
     }
     if (p.secondary !== undefined) {
       const s = p.secondary

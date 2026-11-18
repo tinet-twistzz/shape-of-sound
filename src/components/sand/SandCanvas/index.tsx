@@ -7,7 +7,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import type { CSSProperties } from 'react'
 
 import { copy } from '@/content/copy'
-import type { ParticleTheme, PatternParams, PlateShape } from '@/types/domain'
+import type { ParticleMedium, ParticleTheme, PatternParams, PlateShape } from '@/types/domain'
 
 import styles from './SandCanvas.module.css'
 
@@ -50,6 +50,8 @@ const POINTER_RADIUS = 0.24
 const POINTER_PUSH = 0.02
 const BG_SOLID = '#0A0C10'
 const BG_TRAIL = 'rgba(10, 12, 16, 0.28)'
+// 孢子拖尾更长：背景衰减更慢，保留呼吸星雾的流动余迹
+const BG_TRAIL_SPORES = 'rgba(10, 12, 16, 0.16)'
 const PLATE_FILL = 'rgba(232, 230, 225, 0.028)'
 const PLATE_RIM = 'rgba(212, 175, 55, 0.4)'
 const PLATE_R = 0.95
@@ -57,6 +59,25 @@ const SQRT3_2 = Math.sqrt(3) / 2
 const HEX_APOTHEM = PLATE_R * SQRT3_2
 const TRI_R = 0.98
 const TRI_APOTHEM = TRI_R / 2
+
+// 四种显影介质的物理参数：阻尼 / 静摩擦 / 弹跳 / 迁移 / 切向涡流占比
+const MEDIUM_PHYSICS: Record<
+  ParticleMedium,
+  { damping: number; restDamping: number; jitter: number; migrate: number; swirl: number }
+> = {
+  // 矿物细沙：高静摩擦 + 干脆波腹弹跳（原基准）
+  sand: { damping: DAMPING, restDamping: REST_DAMPING, jitter: JITTER, migrate: MIGRATE, swirl: 0 },
+  // 声流液银：高粘度顺滑阻尼，低随机弹跳，紧密收束于节线中心
+  mercury: { damping: 0.78, restDamping: 0.42, jitter: JITTER * 0.3, migrate: MIGRATE * 1.6, swirl: 0 },
+  // 织金磁丝：中等阻尼，快速落定
+  filings: { damping: 0.8, restDamping: 0.45, jitter: JITTER * 0.55, migrate: MIGRATE * 1.25, swirl: 0 },
+  // 极光孢子：低质量飘逸，叠加切向微涡流，定格后仍沿节线河道缓缓流淌
+  spores: { damping: 0.94, restDamping: 0.82, jitter: JITTER * 0.7, migrate: MIGRATE * 0.85, swirl: 0.15 },
+}
+
+// 液银 / 磁丝的有效绘制上限：保性能与观感，超出部分只参与物理不参与笔触
+const MERCURY_CAP = 9000
+const FILINGS_CAP = 9000
 
 const THEME_COLORS: Record<ParticleTheme, { base: string; bright: string; glow: string }> = {
   gold: {
@@ -128,6 +149,7 @@ interface Sim {
   shape: PlateShape
   platePath: Path2D | null
   theme: ParticleTheme
+  medium: ParticleMedium
   energy: number
   interactive: boolean
   reduced: boolean
@@ -158,7 +180,7 @@ function patternKeyOf(pattern: PatternParams): string {
   const sliceKey = slices
     ? slices.map((s) => `${s.n}.${s.m}.${s.a}.${s.b}.${s.weight}`).join('|')
     : '0'
-  return `${pattern.n}-${pattern.m}-${pattern.a ?? 0}-${pattern.b ?? 0}-${pattern.plateShape ?? 'square'}-${secKey}-${pattern.compressionMode ?? 'live'}-${sliceKey}-${(pattern.twist ?? 0).toFixed(2)}`
+  return `${pattern.n}-${pattern.m}-${pattern.a ?? 0}-${pattern.b ?? 0}-${pattern.plateShape ?? 'square'}-${secKey}-${pattern.compressionMode ?? 'live'}-${sliceKey}-${(pattern.twist ?? 0).toFixed(2)}-${pattern.medium ?? 'sand'}`
 }
 
 // 声音年轮固定按圆盘处理；其余模式（含多重曝光）严格服从所选盘形
@@ -486,6 +508,9 @@ function stepSim(sim: Sim): void {
   const pointerOn = pointer.on && sim.interactive
   const radiusSq = POINTER_RADIUS * POINTER_RADIUS
   const active = sim.activeCount
+  const phys = MEDIUM_PHYSICS[sim.medium]
+  // 孢子涡流驱动不随 amp 衰减：定格在波节线（amp≈0）后仍沿切线缓缓流淌
+  const swirlDrift = phys.swirl * MIGRATE
   // voice 主题色桶在落沙时锁定，不随位置覆盖，保留不同时刻的声音色彩
   const lockBands = sim.theme === 'voice'
   for (let i = 0; i < active; i += 1) {
@@ -497,13 +522,17 @@ function stepSim(sim: Sim): void {
     sampleField(sim, x, y)
     const amp = sim.sample[0]
     // 波腹处随机弹跳，强度随 amp 与 energy 缩放；波节处 amp≈0 自然安歇
-    const kick = amp * energy * JITTER
+    const kick = amp * energy * phys.jitter
     vx += (Math.random() - 0.5) * kick
     vy += (Math.random() - 0.5) * kick
     // 向振幅更小方向（波节线）迁移
-    const pull = amp * MIGRATE
+    const pull = amp * phys.migrate
     vx += sim.sample[1] * pull
     vy += sim.sample[2] * pull
+    if (swirlDrift > 0) {
+      vx += -sim.sample[2] * swirlDrift
+      vy += sim.sample[1] * swirlDrift
+    }
     if (pointerOn) {
       const dx = x - pointer.x
       const dy = y - pointer.y
@@ -515,7 +544,7 @@ function stepSim(sim: Sim): void {
         vy += dy * f
       }
     }
-    const damp = amp < REST_AMP ? REST_DAMPING : DAMPING
+    const damp = amp < REST_AMP ? phys.restDamping : phys.damping
     vx *= damp
     vy *= damp
     x += vx
@@ -553,11 +582,136 @@ function stepSim(sim: Sim): void {
   }
 }
 
+// 材质笔触的颜色批次与主题取色完全正交：voice 四桶 / neon 三环带 / 其余主题 base+bright 两批
+function mediumBatchCount(theme: ParticleTheme): number {
+  return theme === 'voice' ? 4 : theme === 'neon' ? 3 : 2
+}
+
+function mediumBatchColor(sim: Sim, band: number): string {
+  if (sim.theme === 'voice') return VOICE_BANDS[band]
+  if (sim.theme === 'neon') return NEON_BANDS[band]
+  const colors = THEME_COLORS[sim.theme]
+  return band === 0 ? colors.base : colors.bright
+}
+
+function inMediumBatch(sim: Sim, i: number, band: number, split: number): boolean {
+  if (sim.theme === 'voice' || sim.theme === 'neon') return sim.bands[i] === band
+  return band === 0 ? i < split : i >= split
+}
+
+// 声流液银：底层半透明色块 lighter 融合成连续液脉，顶层银白细芯形成金属反光脊
+function drawMercury(sim: Sim, sx: number, sy: number): void {
+  const { ctx, dpr, particles: p } = sim
+  const count = Math.min(sim.activeCount, MERCURY_CAP)
+  const split = (count * 0.7) | 0
+  const batches = mediumBatchCount(sim.theme)
+  const blob = 3.4 * dpr
+  const blobHalf = blob / 2
+  ctx.globalCompositeOperation = 'lighter'
+  for (let band = 0; band < batches; band += 1) {
+    ctx.fillStyle = mediumBatchColor(sim, band)
+    for (let i = 0; i < count; i += 1) {
+      if (!inMediumBatch(sim, i, band, split)) continue
+      const o = i * 4
+      ctx.fillRect(p[o] * sx + sx - blobHalf, p[o + 1] * sy + sy - blobHalf, blob, blob)
+    }
+  }
+  ctx.globalCompositeOperation = 'source-over'
+  const core = 1.1 * dpr
+  const coreHalf = core / 2
+  ctx.fillStyle = 'rgba(238, 244, 250, 0.85)'
+  for (let i = 0; i < count; i += 1) {
+    const o = i * 4
+    ctx.fillRect(p[o] * sx + sx - coreHalf, p[o + 1] * sy + sy - coreHalf, core, core)
+  }
+}
+
+// 织金磁丝：每色批单次 beginPath + moveTo/lineTo + stroke，沿驻波场切线排布极细短丝
+function drawFilings(sim: Sim, sx: number, sy: number): void {
+  const { ctx, dpr, particles: p } = sim
+  const count = Math.min(sim.activeCount, FILINGS_CAP)
+  const split = (count * 0.7) | 0
+  const batches = mediumBatchCount(sim.theme)
+  const halfLen = 2.8 * dpr
+  ctx.lineWidth = Math.max(1, 0.7 * dpr)
+  ctx.lineCap = 'round'
+  for (let band = 0; band < batches; band += 1) {
+    ctx.strokeStyle = mediumBatchColor(sim, band)
+    ctx.beginPath()
+    for (let i = 0; i < count; i += 1) {
+      if (!inMediumBatch(sim, i, band, split)) continue
+      const o = i * 4
+      const x = p[o]
+      const y = p[o + 1]
+      sampleField(sim, x, y)
+      // 切线 = (-dirY, dirX)；场梯度极弱处回退速度方向，再退固定角
+      let tx = -sim.sample[2]
+      let ty = sim.sample[1]
+      let len = Math.sqrt(tx * tx + ty * ty)
+      if (len < 1e-3) {
+        tx = p[o + 2]
+        ty = p[o + 3]
+        len = Math.sqrt(tx * tx + ty * ty)
+        if (len < 1e-5) {
+          tx = 0.7071
+          ty = 0.7071
+          len = 1
+        }
+      }
+      tx = (tx / len) * halfLen
+      ty = (ty / len) * halfLen
+      const cx = x * sx + sx
+      const cy = y * sy + sy
+      ctx.moveTo(cx - tx, cy - ty)
+      ctx.lineTo(cx + tx, cy + ty)
+    }
+    ctx.stroke()
+  }
+}
+
+// 极光孢子：lighter 加色柔光微粒 + 稀疏星点高光，配合长拖尾呈现呼吸星雾
+function drawSpores(sim: Sim, sx: number, sy: number): void {
+  const { ctx, dpr, particles: p, activeCount: count } = sim
+  const split = (count * 0.7) | 0
+  const batches = mediumBatchCount(sim.theme)
+  const glow = 2.6 * dpr
+  const glowHalf = glow / 2
+  ctx.globalCompositeOperation = 'lighter'
+  for (let band = 0; band < batches; band += 1) {
+    ctx.fillStyle = mediumBatchColor(sim, band)
+    for (let i = 0; i < count; i += 1) {
+      if (!inMediumBatch(sim, i, band, split)) continue
+      const o = i * 4
+      ctx.fillRect(p[o] * sx + sx - glowHalf, p[o + 1] * sy + sy - glowHalf, glow, glow)
+    }
+  }
+  const star = 1 * dpr
+  const starHalf = star / 2
+  ctx.fillStyle = 'rgba(255, 250, 235, 0.9)'
+  for (let i = 0; i < count; i += 6) {
+    const o = i * 4
+    ctx.fillRect(p[o] * sx + sx - starHalf, p[o + 1] * sy + sy - starHalf, star, star)
+  }
+  ctx.globalCompositeOperation = 'source-over'
+}
+
 function drawParticles(sim: Sim): void {
   const { ctx, w, h, activeCount: count, particles: p, dpr } = sim
   if (w === 0 || h === 0) return
   const sx = w / 2
   const sy = h / 2
+  if (sim.medium === 'mercury') {
+    drawMercury(sim, sx, sy)
+    return
+  }
+  if (sim.medium === 'filings') {
+    drawFilings(sim, sx, sy)
+    return
+  }
+  if (sim.medium === 'spores') {
+    drawSpores(sim, sx, sy)
+    return
+  }
   if (sim.theme === 'voice') {
     const size = 1.5 * dpr
     const half = size / 2
@@ -666,7 +820,7 @@ function cleanDraw(sim: Sim): void {
 }
 
 function trailDraw(sim: Sim): void {
-  sim.ctx.fillStyle = BG_TRAIL
+  sim.ctx.fillStyle = sim.medium === 'spores' ? BG_TRAIL_SPORES : BG_TRAIL
   sim.ctx.fillRect(0, 0, sim.w, sim.h)
   drawPlate(sim)
   drawParticles(sim)
@@ -768,6 +922,7 @@ export const SandCanvas = forwardRef<SandCanvasHandle, SandCanvasProps>(function
       shape: effectiveShape(init.pattern),
       platePath: null,
       theme: init.theme,
+      medium: init.pattern.medium ?? 'sand',
       energy: init.energy,
       interactive: init.interactive,
       reduced: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
@@ -861,6 +1016,7 @@ export const SandCanvas = forwardRef<SandCanvasHandle, SandCanvasProps>(function
     const sim = simRef.current
     if (!sim || sim.patternKey === key) return
     sim.patternKey = key
+    sim.medium = pattern.medium ?? 'sand'
     sim.field = buildField(pattern)
     const shape = effectiveShape(pattern)
     const shapeChanged = shape !== sim.shape

@@ -1,4 +1,4 @@
-import type { PitchLevel, PlateShape, SectionId } from '@/types/domain'
+import type { ParticleMedium, PitchLevel, PlateShape, SectionId } from '@/types/domain'
 
 const quizExplanations: Record<string, string> = {
   q1: '揭晓：这是澳洲的【迪吉里杜管共鸣】！超低频空气柱驻波波长极长，只能画出错落宽阔的线条。',
@@ -119,7 +119,7 @@ export const copy = {
       inputModeSlider: '滑动调音',
       inputModeMic: '麦克风哼唱',
       inputModeAria: '选择声音输入方式',
-      themeLabel: '沙粒色泽',
+      themeLabel: '显影色泽',
       themes: {
         gold: '金色细沙',
         glacier: '冰川蓝',
@@ -157,6 +157,14 @@ export const copy = {
         triangle: '三角盘',
       } satisfies Record<PlateShape, string>,
       plateSwitchAria: '切换沙盘形状',
+      mediumLabel: '显影材质',
+      mediums: {
+        sand: '矿物细沙',
+        mercury: '声流液银',
+        filings: '织金磁丝',
+        spores: '极光孢子',
+      } satisfies Record<ParticleMedium, string>,
+      mediumSwitchAria: '切换显影材质',
       realtimeHint: '也可以开启麦克风，让沙纹实时跟着你的声音走，闭嘴也不散',
       utteranceReport: {
         silent: '没太听清你的声音，先画一幅基础花纹，再说一句试试',
@@ -218,7 +226,8 @@ export const copy = {
       groupSignalEn: 'SIGNAL',
       groupPlate: '共振盘形状',
       groupPlateEn: 'PLATE SHAPE',
-      groupMaterialEn: 'MATERIAL',
+      groupPaletteEn: 'PALETTE',
+      groupMediumEn: 'MEDIUM',
       groupSignature: '落款与发布',
       groupSignatureEn: 'SIGNATURE & PUBLISH',
       monitorLabel: '波形监视 · WAVE MONITOR',

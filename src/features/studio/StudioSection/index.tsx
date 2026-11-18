@@ -14,10 +14,11 @@ import { centroidToB } from '@/services/real/chladniPatternMapper'
 import { GalleryError } from '@/services/real/galleryService'
 import { localGallery } from '@/services/real/localGallery'
 import { useAppActions, useAppState } from '@/store/appStateContext'
-import type { Artwork, CompressionMode, InputMode, PatternParams, PlateShape, ReplayMeta } from '@/types/domain'
+import type { Artwork, CompressionMode, InputMode, ParticleMedium, PatternParams, PlateShape, ReplayMeta } from '@/types/domain'
 
 import { FrequencySlider } from '../FrequencySlider'
 import { InputModeSwitch } from '../InputModeSwitch'
+import { MediumPicker } from '../MediumPicker'
 import { CAPTURE_SECONDS, MicPanel } from '../MicPanel'
 import type { CapturePhase, LongPhase } from '../MicPanel'
 import { ParticleThemePicker } from '../ParticleThemePicker'
@@ -74,6 +75,7 @@ export function StudioSection() {
   const [secondsLeft, setSecondsLeft] = useState(CAPTURE_SECONDS)
   const [utterance, setUtterance] = useState<UtteranceResult | null>(null)
   const [plateShape, setPlateShape] = useState<PlateShape>('square')
+  const [medium, setMedium] = useState<ParticleMedium>('sand')
   const captureCancelRef = useRef<(() => void) | null>(null)
   const [longPhase, setLongPhase] = useState<LongPhase>('idle')
   const [longElapsed, setLongElapsed] = useState(0)
@@ -114,19 +116,20 @@ export function StudioSection() {
         a: 1,
         b: -1,
         plateShape: compressionMode === 'rings' ? 'circle' : plateShape,
+        medium,
         compressionMode,
         timelineSlices: longSlices,
       }
     }
-    if (inputMode === 'mic' && utterance) return { ...utterance.pattern, plateShape }
+    if (inputMode === 'mic' && utterance) return { ...utterance.pattern, plateShape, medium }
     if (inputMode === 'mic') {
       // 实时哼唱：音高定模态，当前帧频谱质心微调耦合比，不同元音呈现不同花瓣开合
       const base = mapVoicePitch(frequencyHz)
       const b = micCentroid !== null ? centroidToB(micCentroid) : base.b
-      return { ...base, b, plateShape }
+      return { ...base, b, plateShape, medium }
     }
-    return { ...patternMapper.frequencyToPattern(frequencyHz), plateShape }
-  }, [inputMode, longSlices, compressionMode, utterance, plateShape, patternMapper, frequencyHz, mapVoicePitch, micCentroid])
+    return { ...patternMapper.frequencyToPattern(frequencyHz), plateShape, medium }
+  }, [inputMode, longSlices, compressionMode, utterance, plateShape, medium, patternMapper, frequencyHz, mapVoicePitch, micCentroid])
   const description = describeFrequency(frequencyHz)
   const energy =
     inputMode === 'mic' && longSlices
@@ -394,10 +397,11 @@ export function StudioSection() {
     setPlateShape(shape)
   }
 
-  // 子组件 SandCanvas 的 effect 先按新盘形重撒，这里再 scatter 让沙粒立刻重新排队
+  // 子组件 SandCanvas 的 effect 先按新盘形重撒，这里再 scatter 让沙粒立刻重新排队；
+  // 切换材质也轻散一次，让新介质的物理笔触立刻显形
   useEffect(() => {
     sandRef.current?.scatter()
-  }, [plateShape])
+  }, [plateShape, medium])
 
   const handleCommit = (hz: number) => {
     audioEngine.playTone(hz)
@@ -641,11 +645,15 @@ export function StudioSection() {
             <PlateShapePicker value={plateShape} onChange={handlePlateShape} />
           </ConsoleGroup>
 
-          <ConsoleGroup index="04" title={t.themeLabel} en={t.groupMaterialEn}>
+          <ConsoleGroup index="04" title={t.themeLabel} en={t.groupPaletteEn}>
             <ParticleThemePicker value={theme} onChange={actions.setTheme} />
           </ConsoleGroup>
 
-          <ConsoleGroup index="05" title={t.groupSignature} en={t.groupSignatureEn}>
+          <ConsoleGroup index="05" title={t.mediumLabel} en={t.groupMediumEn}>
+            <MediumPicker value={medium} onChange={setMedium} />
+          </ConsoleGroup>
+
+          <ConsoleGroup index="06" title={t.groupSignature} en={t.groupSignatureEn}>
             <SignatureForm
               author={author}
               onAuthorChange={actions.setAuthor}
