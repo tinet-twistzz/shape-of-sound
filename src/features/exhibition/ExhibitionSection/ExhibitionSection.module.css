@@ -69,10 +69,20 @@
   line-height: var(--leading-body);
 }
 
-.more {
+.pager {
   display: flex;
+  align-items: center;
   justify-content: center;
+  gap: 20px;
   margin-top: 32px;
+}
+
+.pageIndicator {
+  min-width: 5em;
+  text-align: center;
+  font-size: var(--text-xs);
+  letter-spacing: 0.12em;
+  color: var(--color-text-dim);
 }
 
 .mineNote {

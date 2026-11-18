@@ -19,6 +19,9 @@ import styles from './ExhibitionSection.module.css'
 
 const t = copy.sections.exhibition
 
+// 与 functions/routes.mjs 的 PAGE 保持一致
+const PAGE_SIZE = 20
+
 type Tab = 'public' | 'mine'
 type LoadStatus = 'loading' | 'ready' | 'error'
 
@@ -32,8 +35,8 @@ export function ExhibitionSection() {
   const [items, setItems] = useState<ExhibitionArtwork[]>([])
   const [publicStatus, setPublicStatus] = useState<LoadStatus>('loading')
   const [hasMore, setHasMore] = useState(false)
-  const [nextOffset, setNextOffset] = useState<number | null>(null)
-  const [loadingMore, setLoadingMore] = useState(false)
+  const [page, setPage] = useState(1)
+  const [paging, setPaging] = useState(false)
   const [records, setRecords] = useState<LocalArtwork[]>([])
   const [mineStatus, setMineStatus] = useState<LoadStatus>('loading')
   const [active, setActive] = useState<ReplayWork | null>(null)
@@ -41,10 +44,10 @@ export function ExhibitionSection() {
   const loadPublic = useCallback(async () => {
     setPublicStatus('loading')
     try {
-      const page = await galleryService.list(0)
-      setItems(page.items)
-      setHasMore(page.hasMore)
-      setNextOffset(page.nextOffset)
+      const first = await galleryService.list(0)
+      setItems(first.items)
+      setHasMore(first.hasMore)
+      setPage(1)
       setPublicStatus('ready')
     } catch {
       setPublicStatus('error')
@@ -77,18 +80,19 @@ export function ExhibitionSection() {
     [mineUrls],
   )
 
-  const loadMore = async () => {
-    if (nextOffset === null || loadingMore) return
-    setLoadingMore(true)
+  const goToPage = async (target: number) => {
+    if (paging || target < 1 || target === page) return
+    setPaging(true)
     try {
-      const page = await galleryService.list(nextOffset)
-      setItems((prev) => [...prev, ...page.items])
-      setHasMore(page.hasMore)
-      setNextOffset(page.nextOffset)
+      const result = await galleryService.list((target - 1) * PAGE_SIZE)
+      setItems(result.items)
+      setHasMore(result.hasMore)
+      setPage(target)
+      scrollTo('exhibition')
     } catch {
       toast(copy.hints.loadError, 'warning')
     } finally {
-      setLoadingMore(false)
+      setPaging(false)
     }
   }
 
@@ -168,7 +172,7 @@ export function ExhibitionSection() {
               </Button>
             </div>
           )}
-          {publicStatus === 'ready' && items.length === 0 && (
+          {publicStatus === 'ready' && items.length === 0 && page === 1 && (
             <div className={styles.notice}>
               <p className={styles.statusText}>{t.publicEmpty}</p>
               <Button variant="outline" size="sm" onClick={goStudio}>
@@ -176,7 +180,7 @@ export function ExhibitionSection() {
               </Button>
             </div>
           )}
-          {publicStatus === 'ready' && items.length > 0 && (
+          {publicStatus === 'ready' && (items.length > 0 || page > 1) && (
             <>
               <div className={styles.grid}>
                 {items.map((item, index) => (
@@ -186,15 +190,31 @@ export function ExhibitionSection() {
                     author={item.author}
                     theme={item.theme}
                     imageUrl={item.imageUrl}
-                    order={index + 1}
+                    order={(page - 1) * PAGE_SIZE + index + 1}
                     onOpen={() => openPublic(item)}
                   />
                 ))}
               </div>
-              {hasMore && (
-                <div className={styles.more}>
-                  <Button variant="outline" disabled={loadingMore} onClick={() => void loadMore()}>
-                    {loadingMore ? t.loadingMore : t.loadMore}
+              {(page > 1 || hasMore) && (
+                <div className={styles.pager}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={paging || page === 1}
+                    onClick={() => void goToPage(page - 1)}
+                  >
+                    {t.prevPage}
+                  </Button>
+                  <span className={`mono ${styles.pageIndicator}`} aria-live="polite">
+                    {paging ? t.paging : t.pageIndicator(page)}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={paging || !hasMore}
+                    onClick={() => void goToPage(page + 1)}
+                  >
+                    {t.nextPage}
                   </Button>
                 </div>
               )}
