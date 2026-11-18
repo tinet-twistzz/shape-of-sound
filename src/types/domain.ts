@@ -6,7 +6,7 @@ export type InputMode = 'slider' | 'mic'
 
 export type MicStatus = 'idle' | 'requesting' | 'listening' | 'denied' | 'unsupported'
 
-export type SectionId = 'hero' | 'gallery' | 'quiz' | 'studio'
+export type SectionId = 'hero' | 'gallery' | 'quiz' | 'studio' | 'exhibition'
 
 export type PlateShape = 'square' | 'circle' | 'hexagon' | 'triangle'
 
@@ -52,12 +52,22 @@ export interface QuizQuestion {
 
 export interface Artwork {
   id: string
+  title?: string
   pattern: PatternParams
   theme: ParticleTheme
   author: string
   source: InputMode
   frequencyHz: number
   createdAt: number
+}
+
+/** 高保真重放所需的仿真参数；count 为导出时的实际粒数，frequencyHz 随 state 一起入库 */
+export interface ReplayMeta {
+  density: number
+  energy: number
+  activeColorBand: 0 | 1 | 2 | 3
+  count: number
+  frequencyHz: number
 }
 
 export interface PrincipleChapter {

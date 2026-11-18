@@ -1,4 +1,13 @@
-import type { Artwork, PatternParams, PrincipleChapter, QuizQuestion, SoundPreset } from './domain'
+import type {
+  Artwork,
+  InputMode,
+  ParticleTheme,
+  PatternParams,
+  PrincipleChapter,
+  QuizQuestion,
+  ReplayMeta,
+  SoundPreset,
+} from './domain'
 
 export interface DataSource {
   getSoundPresets(): Promise<SoundPreset[]>
@@ -42,6 +51,46 @@ export interface ArtworkExporter {
   export(artwork: Artwork, snapshot: Blob | null): Promise<Blob | null>
 }
 
+export interface ExhibitionArtwork {
+  id: string
+  title: string
+  author: string
+  theme: ParticleTheme
+  source: InputMode
+  frequencyHz: number
+  pattern: PatternParams
+  replayMeta: ReplayMeta
+  createdAt: number
+  imageUrl: string
+}
+
+export interface ExhibitionDetail extends ExhibitionArtwork {
+  stateUrl: string
+}
+
+export interface PublishInput {
+  title: string
+  author: string
+  theme: ParticleTheme
+  source: InputMode
+  frequencyHz: number
+  pattern: PatternParams
+  replayMeta: ReplayMeta
+}
+
+export interface GalleryPage {
+  items: ExhibitionArtwork[]
+  hasMore: boolean
+  nextOffset: number | null
+}
+
+export interface GalleryService {
+  list(offset: number): Promise<GalleryPage>
+  detail(id: string): Promise<ExhibitionDetail>
+  /** 创建 → 上传快照与粒子状态 → 校验完成；失败抛 GalleryError，不自动重试 */
+  publish(input: PublishInput, image: Blob, state: ArrayBuffer): Promise<{ id: string }>
+}
+
 export interface Services {
   dataSource: DataSource
   audioEngine: AudioEngine
@@ -49,4 +98,5 @@ export interface Services {
   quizService: QuizService
   patternMapper: PatternMapper
   artworkExporter: ArtworkExporter
+  galleryService: GalleryService
 }

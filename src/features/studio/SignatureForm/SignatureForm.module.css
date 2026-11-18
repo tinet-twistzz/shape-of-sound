@@ -54,7 +54,9 @@
 }
 
 .submit {
-  flex-shrink: 0;
+  flex: 1;
+  min-width: 0;
+  justify-content: center;
   white-space: nowrap;
 }
 

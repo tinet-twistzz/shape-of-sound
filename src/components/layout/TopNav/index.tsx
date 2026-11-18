@@ -11,7 +11,7 @@ import type { SectionId } from '@/types/domain'
 
 import styles from './TopNav.module.css'
 
-const NAV_LINKS: readonly SectionId[] = ['gallery', 'quiz', 'studio']
+const NAV_LINKS: readonly SectionId[] = ['gallery', 'quiz', 'studio', 'exhibition']
 
 export function TopNav() {
   const { currentSection, muted } = useAppState()

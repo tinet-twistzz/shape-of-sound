@@ -10,8 +10,10 @@ import { QuestionIcon, SpeakerIcon } from '@/components/ui/icons'
 import { useToast } from '@/components/ui/Toast/toastContext'
 import { copy } from '@/content/copy'
 import { useServices } from '@/services/serviceContext'
+import { GalleryError } from '@/services/real/galleryService'
+import { localGallery } from '@/services/real/localGallery'
 import { useAppActions, useAppState } from '@/store/appStateContext'
-import type { Artwork, CompressionMode, InputMode, PatternParams, PlateShape } from '@/types/domain'
+import type { Artwork, CompressionMode, InputMode, PatternParams, PlateShape, ReplayMeta } from '@/types/domain'
 
 import { FrequencySlider } from '../FrequencySlider'
 import { InputModeSwitch } from '../InputModeSwitch'
@@ -19,7 +21,9 @@ import { CAPTURE_SECONDS, MicPanel } from '../MicPanel'
 import type { CapturePhase, LongPhase } from '../MicPanel'
 import { ParticleThemePicker } from '../ParticleThemePicker'
 import { PlateShapePicker } from '../PlateShapePicker'
+import { PublishDialog } from '../PublishDialog'
 import { SignatureForm } from '../SignatureForm'
+import type { SignatureBusy } from '../SignatureForm'
 import { WaveIndicator } from '../WaveIndicator'
 import { describeFrequency, energyForFrequency, previewWaveform } from '../frequencyMeta'
 import { LONG_MAX_SECONDS, LONG_MIN_SECONDS, compressTimeline } from '../longSoundCompression'
@@ -56,7 +60,7 @@ function ConsoleGroup({
 
 /** HALL 03 · 声绘工坊：左实时沙盘，右精密仪器控制台 */
 export function StudioSection() {
-  const { patternMapper, audioEngine, micInput, artworkExporter } = useServices()
+  const { patternMapper, audioEngine, micInput, artworkExporter, galleryService } = useServices()
   const { studio } = useAppState()
   const actions = useAppActions()
   const toast = useToast()
@@ -79,6 +83,8 @@ export function StudioSection() {
   const finishLongRef = useRef<(() => void) | null>(null)
   const [voiceDensity, setVoiceDensity] = useState(0.3)
   const [colorBand, setColorBand] = useState<0 | 1 | 2 | 3>(1)
+  const [busy, setBusy] = useState<SignatureBusy>(null)
+  const [publishOpen, setPublishOpen] = useState(false)
   const voiceChargeRef = useRef(0)
   const voiceLastAtRef = useRef(0)
 
@@ -375,19 +381,102 @@ export function StudioSection() {
     sandRef.current?.scatter()
   }
 
-  const handleCollect = async () => {
-    const artwork: Artwork = {
-      id: `art-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-      pattern,
-      theme,
-      author: author.trim() || t.anonymousAuthor,
-      source: inputMode,
-      frequencyHz,
-      createdAt: Date.now(),
+  const currentDensity = inputMode === 'mic' && theme === 'voice' ? voiceDensity : 1
+
+  const captureReplayMeta = (state: ArrayBuffer): ReplayMeta => ({
+    density: currentDensity,
+    energy,
+    activeColorBand: colorBand,
+    count: new DataView(state).getUint32(4, true),
+    frequencyHz,
+  })
+
+  const handleDownload = async () => {
+    if (busy) return
+    setBusy('download')
+    try {
+      const state = sandRef.current?.exportState() ?? null
+      const image = (await sandRef.current?.snapshotScaled(600)) ?? null
+      const snapshot = (await sandRef.current?.snapshot()) ?? null
+      if (!state || !image) {
+        toast(t.captureFailedToast, 'warning')
+        return
+      }
+      const title = t.defaultTitle(frequencyHz)
+      const artwork: Artwork = {
+        id: crypto.randomUUID(),
+        title,
+        pattern,
+        theme,
+        author: author.trim() || t.anonymousAuthor,
+        source: inputMode,
+        frequencyHz,
+        createdAt: Date.now(),
+      }
+      await artworkExporter.export(artwork, snapshot)
+      try {
+        await localGallery.save({ ...artwork, title, replayMeta: captureReplayMeta(state), image, state })
+      } catch {
+        // 本机收藏失败不影响下载
+      }
+      toast(t.downloadedToast, 'success')
+    } finally {
+      setBusy(null)
     }
-    const snapshot = (await sandRef.current?.snapshot()) ?? null
-    await artworkExporter.export(artwork, snapshot)
-    toast(t.collectedToast, 'success')
+  }
+
+  const handlePublish = async (title: string) => {
+    if (busy) return
+    setBusy('publish')
+    try {
+      const state = sandRef.current?.exportState() ?? null
+      const image = (await sandRef.current?.snapshotScaled(600)) ?? null
+      if (!state || !image) {
+        toast(t.captureFailedToast, 'warning')
+        setPublishOpen(false)
+        return
+      }
+      const authorName = author.trim() || t.anonymousAuthor
+      const createdAt = Date.now()
+      const replayMeta = captureReplayMeta(state)
+      let id: string = crypto.randomUUID()
+      let published = false
+      try {
+        const result = await galleryService.publish(
+          { title, author: authorName, theme, source: inputMode, frequencyHz, pattern, replayMeta },
+          image,
+          state,
+        )
+        id = result.id
+        published = true
+      } catch (error) {
+        const code = error instanceof GalleryError ? error.code : 'network_error'
+        toast(code === 'gallery_full' ? t.galleryFullToast : t.publishFailedToast, 'warning')
+      }
+      try {
+        await localGallery.save({
+          id,
+          title,
+          author: authorName,
+          theme,
+          source: inputMode,
+          frequencyHz,
+          pattern,
+          replayMeta,
+          createdAt,
+          image,
+          state,
+        })
+      } catch {
+        // 本机收藏失败不影响发布结果
+      }
+      if (published) {
+        toast(t.publishedToast, 'success')
+        setPublishOpen(false)
+      }
+    } finally {
+      setBusy(null)
+    }
   }
 
   return (
@@ -537,11 +626,22 @@ export function StudioSection() {
             <SignatureForm
               author={author}
               onAuthorChange={actions.setAuthor}
-              onSubmit={handleCollect}
+              onDownload={() => void handleDownload()}
+              onPublish={() => setPublishOpen(true)}
+              busy={busy}
             />
           </ConsoleGroup>
         </div>
       </div>
+
+      {publishOpen && (
+        <PublishDialog
+          defaultTitle={t.defaultTitle(frequencyHz)}
+          busy={busy === 'publish'}
+          onCancel={() => setPublishOpen(false)}
+          onConfirm={(title) => void handlePublish(title)}
+        />
+      )}
     </Section>
   )
 }

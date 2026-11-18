@@ -16,6 +16,12 @@ export interface SandCanvasHandle {
   scatter(): void
   /** 导出当前画面为带不透明底色的 PNG Blob */
   snapshot(): Promise<Blob | null>
+  /** 导出缩放后的正方形 WebP 快照（展厅卡片用，默认 600×600 q0.85） */
+  snapshotScaled(size?: number): Promise<Blob | null>
+  /** 导出粒子状态：SND1 魔数 + uint32 粒数 + 每粒 Uint16 x、Uint16 y、Uint8 色桶 */
+  exportState(): ArrayBuffer | null
+  /** 灌入粒子状态继续仿真；格式不符返回 false */
+  loadState(buffer: ArrayBuffer): boolean
 }
 
 export interface SandCanvasProps {
@@ -878,7 +884,78 @@ export const SandCanvas = forwardRef<SandCanvasHandle, SandCanvasProps>(function
     })
   }, [])
 
-  useImperativeHandle(ref, () => ({ scatter, snapshot }), [scatter, snapshot])
+  const snapshotScaled = useCallback(async (size = 600): Promise<Blob | null> => {
+    const sim = simRef.current
+    if (!sim || sim.w === 0) return null
+    cleanDraw(sim)
+    const off = document.createElement('canvas')
+    off.width = size
+    off.height = size
+    const ctx = off.getContext('2d')
+    if (!ctx) return null
+    ctx.drawImage(sim.canvas, 0, 0, size, size)
+    return new Promise((resolve) => {
+      off.toBlob((blob) => resolve(blob), 'image/webp', 0.85)
+    })
+  }, [])
+
+  const exportState = useCallback((): ArrayBuffer | null => {
+    const sim = simRef.current
+    if (!sim) return null
+    const n = sim.activeCount
+    const buffer = new ArrayBuffer(8 + n * 5)
+    const bytes = new Uint8Array(buffer)
+    const view = new DataView(buffer)
+    bytes[0] = 0x53
+    bytes[1] = 0x4e
+    bytes[2] = 0x44
+    bytes[3] = 0x31
+    view.setUint32(4, n, true)
+    const p = sim.particles
+    for (let i = 0; i < n; i += 1) {
+      const o = i * 4
+      const qx = Math.max(0, Math.min(65535, Math.round(((p[o] + 1) / 2) * 65535)))
+      const qy = Math.max(0, Math.min(65535, Math.round(((p[o + 1] + 1) / 2) * 65535)))
+      view.setUint16(8 + i * 5, qx, true)
+      view.setUint16(10 + i * 5, qy, true)
+      bytes[12 + i * 5] = sim.bands[i]
+    }
+    return buffer
+  }, [])
+
+  const loadState = useCallback((buffer: ArrayBuffer): boolean => {
+    const sim = simRef.current
+    if (!sim || buffer.byteLength < 8) return false
+    const bytes = new Uint8Array(buffer)
+    if (bytes[0] !== 0x53 || bytes[1] !== 0x4e || bytes[2] !== 0x44 || bytes[3] !== 0x31) return false
+    const view = new DataView(buffer)
+    const n = view.getUint32(4, true)
+    if (n < 1 || n > DESKTOP_COUNT || buffer.byteLength !== 8 + n * 5) return false
+    const p = sim.particles
+    for (let i = 0; i < n; i += 1) {
+      const o = i * 4
+      p[o] = (view.getUint16(8 + i * 5, true) / 65535) * 2 - 1
+      p[o + 1] = (view.getUint16(10 + i * 5, true) / 65535) * 2 - 1
+      p[o + 2] = 0
+      p[o + 3] = 0
+      sim.bands[i] = bytes[12 + i * 5] & 3
+    }
+    sim.count = n
+    sim.density = 1
+    sim.activeCount = n
+    if (sim.reduced) settle(sim)
+    else {
+      cleanDraw(sim)
+      syncRunning(sim)
+    }
+    return true
+  }, [])
+
+  useImperativeHandle(
+    ref,
+    () => ({ scatter, snapshot, snapshotScaled, exportState, loadState }),
+    [scatter, snapshot, snapshotScaled, exportState, loadState],
+  )
 
   const colors = THEME_COLORS[theme]
   const vars = {

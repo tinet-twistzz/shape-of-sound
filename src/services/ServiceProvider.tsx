@@ -2,7 +2,9 @@ import { useMemo } from 'react'
 import type { ReactNode } from 'react'
 
 import { createMockServices } from '@/services/mock'
+import { canvasArtworkExporter } from '@/services/real/canvasArtworkExporter'
 import { chladniPatternMapper } from '@/services/real/chladniPatternMapper'
+import { galleryService } from '@/services/real/galleryService'
 import { webAudioEngine } from '@/services/real/webAudioEngine'
 import { webMicInput } from '@/services/real/webMicInput'
 import { ServiceContext } from '@/services/serviceContext'
@@ -20,6 +22,8 @@ export function ServiceProvider({ services, children }: ServiceProviderProps) {
       audioEngine: webAudioEngine,
       micInput: webMicInput,
       patternMapper: chladniPatternMapper,
+      artworkExporter: canvasArtworkExporter,
+      galleryService,
       ...services,
     }),
     [services],

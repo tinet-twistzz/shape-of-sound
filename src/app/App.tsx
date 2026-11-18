@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 
 import { Footer } from '@/components/layout/Footer'
 import { TopNav } from '@/components/layout/TopNav'
+import { ExhibitionSection } from '@/features/exhibition/ExhibitionSection'
 import { GallerySection } from '@/features/gallery/GallerySection'
 import { HeroSection } from '@/features/hero/HeroSection'
 import { PrincipleDrawer } from '@/features/principle/PrincipleDrawer'
@@ -13,7 +14,7 @@ import type { SectionId } from '@/types/domain'
 
 import styles from './App.module.css'
 
-const SECTION_IDS: readonly SectionId[] = ['hero', 'gallery', 'quiz', 'studio']
+const SECTION_IDS: readonly SectionId[] = ['hero', 'gallery', 'quiz', 'studio', 'exhibition']
 
 export function App() {
   const actions = useAppActions()
@@ -31,6 +32,7 @@ export function App() {
         <GallerySection />
         <QuizSection />
         <StudioSection />
+        <ExhibitionSection />
       </main>
       <Footer />
       <PrincipleDrawer />
