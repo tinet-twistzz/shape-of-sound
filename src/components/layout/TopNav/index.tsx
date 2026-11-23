@@ -20,26 +20,42 @@ export function TopNav() {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
-  // 菜单展开时把前进 Tab 圈在菜单内，避免焦点落到遮罩后的页面内容
+  // 菜单展开时把正反向 Tab 圈在菜单内，避免焦点落到遮罩后的页面内容
   const handleMenuTab = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== 'Tab' || event.shiftKey) return
+    if (event.key !== 'Tab') return
     const menu = menuRef.current
     if (!menu) return
     const items = menu.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')
     if (items.length === 0) return
-    if (document.activeElement === items[items.length - 1]) {
+    const first = items[0]
+    const last = items[items.length - 1]
+    if (event.shiftKey && document.activeElement === first) {
       event.preventDefault()
-      items[0].focus()
+      last.focus()
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault()
+      first.focus()
     }
   }
 
   useEffect(() => {
     if (!menuOpen) return
+    if (window.innerWidth >= 768) {
+      setMenuOpen(false)
+      return
+    }
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === 'Escape') setMenuOpen(false)
     }
+    const onResize = () => {
+      if (window.innerWidth >= 768) setMenuOpen(false)
+    }
     window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    window.addEventListener('resize', onResize)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('resize', onResize)
+    }
   }, [menuOpen])
 
   const navigate = (id: SectionId) => {

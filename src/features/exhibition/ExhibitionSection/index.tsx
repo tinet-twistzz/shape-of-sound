@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { Section } from '@/components/layout/Section'
 import { Button } from '@/components/ui/Button'
 import { SectionHeader } from '@/components/ui/SectionHeader'
+import { SegmentedControl } from '@/components/ui/SegmentedControl'
+import type { SegmentedOption } from '@/components/ui/SegmentedControl'
 import { useToast } from '@/components/ui/Toast/toastContext'
 import { copy } from '@/content/copy'
 import { useScrollTo } from '@/hooks/useScrollTo'
@@ -26,6 +28,11 @@ const PAGE_SIZE = 20
 type Tab = 'public' | 'mine'
 type LoadStatus = 'loading' | 'ready' | 'error'
 
+const TAB_OPTIONS: readonly SegmentedOption<Tab>[] = [
+  { value: 'public', label: t.tabPublic },
+  { value: 'mine', label: t.tabMine },
+]
+
 /** HALL 04 · 艺术展厅：公共展厅（云端）与我的展厅（本机 IndexedDB） */
 export function ExhibitionSection() {
   const { galleryService } = useServices()
@@ -39,30 +46,45 @@ export function ExhibitionSection() {
   const [hasMore, setHasMore] = useState(false)
   const [page, setPage] = useState(1)
   const [paging, setPaging] = useState(false)
-  const [records, setRecords] = useState<LocalArtwork[]>([])
-  const [mineStatus, setMineStatus] = useState<LoadStatus>('loading')
+  const [mineState, setMineState] = useState<{ status: LoadStatus; records: LocalArtwork[] }>({
+    status: 'loading',
+    records: [],
+  })
+  const [mineUrls, setMineUrls] = useState<ReadonlyMap<string, string>>(() => new Map())
   const [active, setActive] = useState<ReplayWork | null>(null)
+  const reqIdRef = useRef(0)
+
+  useEffect(
+    () => () => {
+      reqIdRef.current += 1
+    },
+    [],
+  )
 
   const loadPublic = useCallback(async () => {
+    const reqId = ++reqIdRef.current
+    setPaging(false)
     setPublicStatus('loading')
     try {
       const first = await galleryService.list(0)
+      if (reqId !== reqIdRef.current) return
       setItems(first.items)
       setHasMore(first.hasMore)
       setPage(1)
       setPublicStatus('ready')
     } catch {
+      if (reqId !== reqIdRef.current) return
       setPublicStatus('error')
     }
   }, [galleryService])
 
   const loadMine = useCallback(async () => {
-    setMineStatus('loading')
+    setMineState((prev) => (prev.records.length === 0 ? { ...prev, status: 'loading' } : prev))
     try {
-      setRecords(await localGallery.list())
-      setMineStatus('ready')
+      const records = await localGallery.list()
+      setMineState({ status: 'ready', records })
     } catch {
-      setMineStatus('error')
+      setMineState((prev) => ({ ...prev, status: 'error' }))
     }
   }, [])
 
@@ -78,30 +100,32 @@ export function ExhibitionSection() {
     void loadMine()
   }, [galleryVersion, loadPublic, loadMine])
 
-  const mineUrls = useMemo(
-    () => new Map(records.map((r) => [r.id, URL.createObjectURL(r.image)])),
-    [records],
-  )
-  useEffect(
-    () => () => {
-      mineUrls.forEach((url) => URL.revokeObjectURL(url))
-    },
-    [mineUrls],
-  )
+  useEffect(() => {
+    const urls = new Map(mineState.records.map((r) => [r.id, URL.createObjectURL(r.image)]))
+    setMineUrls(urls)
+    return () => {
+      urls.forEach((url) => URL.revokeObjectURL(url))
+    }
+  }, [mineState.records])
 
   const goToPage = async (target: number) => {
     if (paging || target < 1 || target === page) return
+    const reqId = ++reqIdRef.current
     setPaging(true)
     try {
       const result = await galleryService.list((target - 1) * PAGE_SIZE)
+      if (reqId !== reqIdRef.current) return
       setItems(result.items)
       setHasMore(result.hasMore)
       setPage(target)
       scrollTo('exhibition')
     } catch {
+      if (reqId !== reqIdRef.current) return
       toast(copy.hints.loadError, 'warning')
     } finally {
-      setPaging(false)
+      if (reqId === reqIdRef.current) {
+        setPaging(false)
+      }
     }
   }
 
@@ -136,7 +160,10 @@ export function ExhibitionSection() {
   const handleRemove = async (id: string) => {
     try {
       await localGallery.remove(id)
-      setRecords((prev) => prev.filter((r) => r.id !== id))
+      setMineState((prev) => ({
+        ...prev,
+        records: prev.records.filter((r) => r.id !== id),
+      }))
       toast(t.removedToast, 'info')
     } catch {
       toast(t.removeFailedToast, 'danger')
@@ -149,30 +176,20 @@ export function ExhibitionSection() {
     <Section id="exhibition">
       <SectionHeader index={t.hallIndex} title={t.title} caption={t.caption} />
 
-      <div className={styles.tabs} role="tablist" aria-label={t.tabsAria}>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === 'public'}
-          className={[styles.tab, tab === 'public' && styles.tabActive].filter(Boolean).join(' ')}
-          onClick={() => setTab('public')}
-        >
-          {t.tabPublic}
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === 'mine'}
-          className={[styles.tab, tab === 'mine' && styles.tabActive].filter(Boolean).join(' ')}
-          onClick={() => setTab('mine')}
-        >
-          {t.tabMine}
-        </button>
+      <div className={styles.tabs}>
+        <SegmentedControl
+          options={TAB_OPTIONS}
+          value={tab}
+          onChange={setTab}
+          ariaLabel={t.tabsAria}
+        />
       </div>
 
       {tab === 'public' && (
         <div className={styles.body}>
-          {publicStatus === 'loading' && <p className={`mono ${styles.status}`}>{copy.hints.loading}</p>}
+          {publicStatus === 'loading' && (
+            <p className={`mono ${styles.status}`}>{copy.hints.loading}</p>
+          )}
           {publicStatus === 'error' && (
             <div className={styles.notice}>
               <p className={styles.statusText}>{copy.hints.loadError}</p>
@@ -234,13 +251,15 @@ export function ExhibitionSection() {
 
       {tab === 'mine' && (
         <div className={styles.body}>
-          {mineStatus === 'loading' && <p className={`mono ${styles.status}`}>{copy.hints.loading}</p>}
-          {mineStatus === 'error' && (
+          {mineState.status === 'loading' && (
+            <p className={`mono ${styles.status}`}>{copy.hints.loading}</p>
+          )}
+          {mineState.status === 'error' && (
             <div className={styles.notice}>
               <p className={styles.statusText}>{t.mineUnavailable}</p>
             </div>
           )}
-          {mineStatus === 'ready' && records.length === 0 && (
+          {mineState.status === 'ready' && mineState.records.length === 0 && (
             <div className={styles.notice}>
               <p className={styles.statusText}>{t.mineEmpty}</p>
               <Button variant="outline" size="sm" onClick={goStudio}>
@@ -248,10 +267,10 @@ export function ExhibitionSection() {
               </Button>
             </div>
           )}
-          {mineStatus === 'ready' && records.length > 0 && (
+          {mineState.status === 'ready' && mineState.records.length > 0 && (
             <>
               <div className={styles.grid}>
-                {records.map((record, index) => (
+                {mineState.records.map((record, index) => (
                   <ArtworkCard
                     key={record.id}
                     title={record.title}

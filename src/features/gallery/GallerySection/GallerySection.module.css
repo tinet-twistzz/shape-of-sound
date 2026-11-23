@@ -65,6 +65,19 @@
   letter-spacing: var(--tracking-wide);
 }
 
+.touchHint {
+  margin-top: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--color-text-dim);
+  opacity: 0.78;
+  text-align: center;
+}
+
+.exhibitActions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 /* mock 演奏期间的迷你均衡器 */
 .eq {
   display: inline-flex;
@@ -174,7 +187,7 @@
 }
 
 /* ---------- 宽屏：左右双栏，沙盘随滚动驻留 ---------- */
-@media (min-width: 1200px) {
+@media (min-width: 960px) {
   .layout {
     grid-template-columns: minmax(0, 10fr) minmax(0, 11fr);
     gap: var(--space-7);

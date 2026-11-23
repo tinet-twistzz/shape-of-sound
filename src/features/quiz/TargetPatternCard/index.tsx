@@ -31,6 +31,7 @@ export function TargetPatternCard({
               pattern={pattern}
               theme="gold"
               energy={0.6}
+              interactive
             />
           </div>
         </div>
@@ -43,11 +44,7 @@ export function TargetPatternCard({
         <span className={`caption ${styles.plaqueNote}`}>
           {revealedSound ? (
             <span className={styles.plaqueReveal}>
-              <SoundExhibitIcon
-                id={revealedSound.id}
-                size={14}
-                className={styles.plaqueIcon}
-              />
+              <SoundExhibitIcon id={revealedSound.id} size={14} className={styles.plaqueIcon} />
               {revealedSound.name} · {revealedSound.frequencyHz} Hz
             </span>
           ) : (

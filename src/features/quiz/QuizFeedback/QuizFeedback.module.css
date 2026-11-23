@@ -86,6 +86,38 @@
   color: var(--color-text);
 }
 
+.compareRow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.compareThumb {
+  flex: none;
+  padding-top: 2px;
+}
+
+.compareBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  flex: 1;
+}
+
+.compareLabel {
+  font-size: 10px;
+  letter-spacing: var(--tracking-hall);
+  text-transform: uppercase;
+  color: var(--color-gold-dim);
+}
+
+.compareText {
+  font-size: var(--text-sm);
+  line-height: var(--leading-body);
+  color: var(--color-gold);
+}
+
 .hintLabel {
   display: inline-block;
   margin-right: var(--space-2);

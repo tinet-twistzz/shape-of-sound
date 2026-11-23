@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { PatternThumbnail } from '@/components/sand/PatternThumbnail'
-import { CollectionIcon, SoundExhibitIcon } from '@/components/ui/icons'
+import { CollectionIcon, SoundExhibitIcon, SpeakerIcon } from '@/components/ui/icons'
 import { copy } from '@/content/copy'
 import type { SoundPreset } from '@/types/domain'
 
@@ -10,10 +10,12 @@ import styles from './CollectionBadge.module.css'
 export interface CollectionBadgeProps {
   collected: SoundPreset[]
   total: number
+  playingId?: string | null
+  onPlay?: (preset: SoundPreset) => void
 }
 
-/** 角落图鉴徽章：点击展开已收集图案的小缩略图列表 */
-export function CollectionBadge({ collected, total }: CollectionBadgeProps) {
+/** 角落图鉴徽章：点击展开已收集图案的小缩略图列表，支持点击复听对应采样 */
+export function CollectionBadge({ collected, total, playingId, onPlay }: CollectionBadgeProps) {
   const [open, setOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
 
@@ -60,18 +62,41 @@ export function CollectionBadge({ collected, total }: CollectionBadgeProps) {
             <p className={`caption ${styles.empty}`}>{copy.sections.quiz.collectionEmpty}</p>
           ) : (
             <ul className={styles.list}>
-              {collected.map((preset) => (
-                <li key={preset.id} className={styles.item}>
-                  <PatternThumbnail pattern={preset.pattern} size={44} theme="gold" />
-                  <span className={styles.itemBody}>
-                    <span className={styles.itemName}>
-                      <SoundExhibitIcon id={preset.id} size={14} className={styles.itemIcon} />
-                      {preset.name}
-                    </span>
-                    <span className={`mono ${styles.itemCode}`}>{preset.patternName}</span>
-                  </span>
-                </li>
-              ))}
+              {collected.map((preset) => {
+                const isPlaying = playingId === preset.id
+                return (
+                  <li key={preset.id}>
+                    <button
+                      type="button"
+                      className={[styles.item, isPlaying && styles.itemPlaying]
+                        .filter(Boolean)
+                        .join(' ')}
+                      aria-label={copy.sections.quiz.collectionReplayAria(preset.name)}
+                      onClick={() => onPlay?.(preset)}
+                    >
+                      <PatternThumbnail pattern={preset.pattern} size={44} theme="gold" />
+                      <span className={styles.itemBody}>
+                        <span className={styles.itemName}>
+                          <SoundExhibitIcon id={preset.id} size={14} className={styles.itemIcon} />
+                          {preset.name}
+                        </span>
+                        <span className={`mono ${styles.itemCode}`}>{preset.patternName}</span>
+                      </span>
+                      <span className={styles.playCue} aria-hidden="true">
+                        {isPlaying ? (
+                          <span className={styles.eq}>
+                            <span />
+                            <span />
+                            <span />
+                          </span>
+                        ) : (
+                          <SpeakerIcon size={13} />
+                        )}
+                      </span>
+                    </button>
+                  </li>
+                )
+              })}
             </ul>
           )}
         </div>

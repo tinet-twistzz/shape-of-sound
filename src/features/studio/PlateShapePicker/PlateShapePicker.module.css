@@ -44,3 +44,9 @@
   letter-spacing: var(--tracking-wide);
   white-space: nowrap;
 }
+
+@media (max-width: 400px) {
+  .picker {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

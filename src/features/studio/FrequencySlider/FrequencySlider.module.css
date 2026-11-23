@@ -6,9 +6,23 @@
 
 .head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
-  gap: var(--space-3);
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.headLeft {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.headRight {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
 }
 
 .label {
@@ -24,6 +38,85 @@
   color: var(--color-text-dim);
 }
 
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-border-subtle);
+  background: rgba(6, 8, 11, 0.5);
+  font-size: 0.6875rem;
+  line-height: 1.5;
+  letter-spacing: 0.06em;
+  color: var(--color-text-dim);
+  white-space: nowrap;
+  transition:
+    color var(--duration-base) var(--ease-out),
+    border-color var(--duration-base) var(--ease-out),
+    background-color var(--duration-base) var(--ease-out),
+    box-shadow var(--duration-base) var(--ease-out);
+}
+
+.badgeDot {
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-full);
+  background: var(--color-text-dim);
+  transition:
+    background-color var(--duration-base) var(--ease-out),
+    box-shadow var(--duration-base) var(--ease-out);
+}
+
+.badgeLocked {
+  color: var(--color-gold);
+  border-color: var(--color-gold-dim);
+  background: var(--color-gold-faint);
+  box-shadow: 0 0 14px rgba(243, 201, 105, 0.16);
+}
+
+.badgeLocked .badgeDot {
+  background: var(--color-gold);
+  box-shadow: 0 0 8px rgba(243, 201, 105, 0.85);
+}
+
+.replayBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-line);
+  background: rgba(6, 8, 11, 0.5);
+  color: var(--color-gold-dim);
+  cursor: pointer;
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    background-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-base) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+
+.replayBtn:hover {
+  color: var(--color-gold);
+  border-color: var(--color-gold-dim);
+  background: var(--color-gold-faint);
+  box-shadow: var(--glow-gold);
+  transform: translateY(-1px);
+}
+
+.replayBtn:active {
+  transform: translateY(0) scale(0.94);
+}
+
+.replayBtn:focus-visible {
+  outline: none;
+  box-shadow: var(--glow-focus);
+}
+
 /* 中央听感描述：不出现 Hz */
 .description {
   min-height: 2.4em;
@@ -37,7 +130,15 @@
   padding: var(--space-1) var(--space-3);
   border-block: 1px solid var(--color-gold-faint);
   background: radial-gradient(240px 40px at 50% 50%, var(--color-gold-faint), transparent 75%);
-  transition: color var(--duration-base) var(--ease-out);
+  transition:
+    color var(--duration-base) var(--ease-out),
+    border-color var(--duration-base) var(--ease-out),
+    text-shadow var(--duration-base) var(--ease-out);
+}
+
+.descriptionLocked {
+  border-color: rgba(243, 201, 105, 0.28);
+  text-shadow: 0 0 22px rgba(243, 201, 105, 0.52);
 }
 
 .input {
@@ -112,29 +213,44 @@
     var(--glow-gold);
 }
 
-/* 仪器刻度尺 */
+/* 15 根克拉尼本征模态对数刻度尺（左右缩进 9px 与 18px 滑块圆心严丝合缝） */
 .ruler {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  height: 8px;
-  padding-inline: 8px;
+  position: relative;
+  height: 10px;
+  margin-inline: 9px;
   margin-top: calc(-1 * var(--space-1));
 }
 
 .tick,
-.tickMajor {
-  width: 1px;
-  background: var(--color-border-subtle);
+.tickNear,
+.tickLocked {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  border-radius: var(--radius-full);
+  transition:
+    height var(--duration-fast) var(--ease-out),
+    background-color var(--duration-base) var(--ease-out),
+    box-shadow var(--duration-base) var(--ease-out);
 }
 
 .tick {
-  height: 4px;
+  width: 1px;
+  height: 5px;
+  background: rgba(243, 201, 105, 0.28);
 }
 
-.tickMajor {
-  height: 8px;
+.tickNear {
+  width: 1.5px;
+  height: 7px;
   background: var(--color-gold-dim);
+}
+
+.tickLocked {
+  width: 2px;
+  height: 10px;
+  background: var(--color-gold);
+  box-shadow: 0 0 8px rgba(243, 201, 105, 0.8);
 }
 
 .ends {
@@ -155,4 +271,10 @@
   color: var(--color-text-dim);
   letter-spacing: var(--tracking-wide);
   text-align: center;
+}
+
+@media (max-width: 440px) {
+  .headCode {
+    display: none;
+  }
 }

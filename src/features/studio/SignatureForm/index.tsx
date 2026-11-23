@@ -1,7 +1,7 @@
 import { useId } from 'react'
 
 import { Button } from '@/components/ui/Button'
-import { CameraIcon, SparkIcon } from '@/components/ui/icons'
+import { ArrowRightIcon, CameraIcon, SparkIcon } from '@/components/ui/icons'
 import { copy } from '@/content/copy'
 
 import styles from './SignatureForm.module.css'
@@ -13,6 +13,7 @@ export interface SignatureFormProps {
   onAuthorChange: (author: string) => void
   onDownload: () => void
   onPublish: () => void
+  onViewExhibition?: () => void
   busy: SignatureBusy
   className?: string
 }
@@ -26,6 +27,7 @@ export function SignatureForm({
   onAuthorChange,
   onDownload,
   onPublish,
+  onViewExhibition,
   busy,
   className,
 }: SignatureFormProps) {
@@ -72,7 +74,15 @@ export function SignatureForm({
           {busy === 'publish' ? t.publishing : t.publishLabel}
         </Button>
       </div>
-      <p className={styles.note}>{t.signatureNote}</p>
+      <div className={styles.footerRow}>
+        <p className={styles.note}>{t.signatureNote}</p>
+        {onViewExhibition && (
+          <button type="button" className={styles.exhibitionLink} onClick={onViewExhibition}>
+            <span>{t.viewInExhibitionLabel}</span>
+            <ArrowRightIcon size={13} />
+          </button>
+        )}
+      </div>
     </div>
   )
 }

@@ -7,9 +7,12 @@ import { Button } from '@/components/ui/Button'
 import { ExhibitLabel } from '@/components/ui/ExhibitLabel'
 import { SectionHeader } from '@/components/ui/SectionHeader'
 import { Tag } from '@/components/ui/Tag'
-import { QuestionIcon, SoundExhibitIcon, SpeakerIcon } from '@/components/ui/icons'
+import { ArrowRightIcon, QuestionIcon, SoundExhibitIcon, SpeakerIcon } from '@/components/ui/icons'
+import { useToast } from '@/components/ui/Toast/toastContext'
 import { copy } from '@/content/copy'
 import { useAsyncData } from '@/hooks/useAsyncData'
+import { useScrollTo } from '@/hooks/useScrollTo'
+import { modeToCenterHz } from '@/services/real/chladniPatternMapper'
 import { useServices } from '@/services/serviceContext'
 import { useAppActions, useAppState } from '@/store/appStateContext'
 import type { SoundPreset } from '@/types/domain'
@@ -47,6 +50,8 @@ export function GallerySection() {
   const { dataSource, audioEngine } = useServices()
   const { selectedSoundId } = useAppState()
   const actions = useAppActions()
+  const toast = useToast()
+  const scrollTo = useScrollTo()
   const [retryKey, setRetryKey] = useState(0)
   const presets = useAsyncData(() => dataSource.getSoundPresets(), [dataSource, retryKey])
   const sandRef = useRef<SandCanvasHandle>(null)
@@ -80,6 +85,21 @@ export function GallerySection() {
     setPlayingId(preset.id)
     if (playTimer.current !== null) window.clearTimeout(playTimer.current)
     playTimer.current = window.setTimeout(() => setPlayingId(null), PLAYING_MS)
+  }
+
+  const handleOpenInStudio = (currentPreset: SoundPreset) => {
+    actions.loadIntoStudio({
+      frequencyHz:
+        currentPreset.frequencyHz ??
+        modeToCenterHz(currentPreset.pattern.n, currentPreset.pattern.m),
+      theme: 'gold',
+      plateShape: currentPreset.pattern.plateShape ?? 'square',
+      medium: 'sand',
+      timbre: Math.max(-1, Math.min(1, -(currentPreset.pattern.b ?? -1) / 1.25)),
+      chord: 'solo',
+    })
+    toast(copy.sections.gallery.openInStudioToast(currentPreset.name), 'info')
+    scrollTo('studio')
   }
 
   const selectedIndex = selected && list ? list.findIndex((p) => p.id === selected.id) : -1
@@ -139,11 +159,7 @@ export function GallerySection() {
                       <span />
                       <span />
                     </span>
-                    <SoundExhibitIcon
-                      id={selected.id}
-                      size={13}
-                      className={styles.playingIcon}
-                    />
+                    <SoundExhibitIcon id={selected.id} size={13} className={styles.playingIcon} />
                     <span className={styles.statusText}>
                       {copy.sections.gallery.playingStatus(selected.name)}
                     </span>
@@ -155,6 +171,7 @@ export function GallerySection() {
                   </>
                 )}
               </div>
+              <p className={`caption ${styles.touchHint}`}>{copy.sections.gallery.touchHint}</p>
             </div>
           </div>
 
@@ -179,6 +196,12 @@ export function GallerySection() {
               ]}
               note={selected.description}
             />
+            <div className={styles.exhibitActions}>
+              <Button variant="outline" size="sm" onClick={() => handleOpenInStudio(selected)}>
+                {copy.sections.gallery.openInStudioLabel}
+                <ArrowRightIcon size={13} />
+              </Button>
+            </div>
           </div>
         </div>
       )}

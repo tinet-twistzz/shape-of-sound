@@ -7,7 +7,8 @@ export function application({ db, storage, BackendError }) {
   const MAX_WORKS = 500
   const IMAGE_MAX_BYTES = 300 * 1024
   const STATE_MAX_BYTES = 8 + 30000 * 5
-  const PENDING_TTL_MS = 24 * 60 * 60 * 1000
+  const PENDING_TTL_MS = 10 * 60 * 1000
+  const IMAGE_TYPES = ['image/webp', 'image/jpeg', 'image/png']
   const THEMES = ['gold', 'glacier', 'neon', 'voice']
   const SHAPES = ['square', 'circle', 'hexagon', 'triangle']
   const MEDIA = ['sand', 'mercury', 'filings', 'spores']
@@ -27,7 +28,8 @@ export function application({ db, storage, BackendError }) {
   const num = (v, min, max) => typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max
 
   async function input(request) {
-    if (!request.headers.get('content-type')?.startsWith('application/json')) fail('invalid_input', 400)
+    if (!request.headers.get('content-type')?.startsWith('application/json'))
+      fail('invalid_input', 400)
     const reader = request.body?.getReader()
     if (!reader) fail('invalid_input', 400)
     let size = 0
@@ -85,7 +87,8 @@ export function application({ db, storage, BackendError }) {
     }
     if (p.secondary !== undefined) {
       const s = p.secondary
-      if (!s || !int(s.n, 1, 32) || !int(s.m, 1, 32) || !num(s.weight, 0, 1)) fail('invalid_input', 400)
+      if (!s || !int(s.n, 1, 32) || !int(s.m, 1, 32) || !num(s.weight, 0, 1))
+        fail('invalid_input', 400)
       out.secondary = { n: s.n, m: s.m, weight: s.weight }
     }
     if (p.compressionMode !== undefined) {
@@ -93,11 +96,22 @@ export function application({ db, storage, BackendError }) {
       out.compressionMode = p.compressionMode
     }
     if (p.timelineSlices !== undefined) {
-      if (!Array.isArray(p.timelineSlices) || p.timelineSlices.length < 1 || p.timelineSlices.length > 24) {
+      if (
+        !Array.isArray(p.timelineSlices) ||
+        p.timelineSlices.length < 1 ||
+        p.timelineSlices.length > 24
+      ) {
         fail('invalid_input', 400)
       }
       out.timelineSlices = p.timelineSlices.map((s) => {
-        if (!s || !int(s.n, 1, 32) || !int(s.m, 1, 32) || !num(s.a, -2, 2) || !num(s.b, -2, 2) || !num(s.weight, 0, 1)) {
+        if (
+          !s ||
+          !int(s.n, 1, 32) ||
+          !int(s.m, 1, 32) ||
+          !num(s.a, -2, 2) ||
+          !num(s.b, -2, 2) ||
+          !num(s.weight, 0, 1)
+        ) {
           fail('invalid_input', 400)
         }
         return { n: s.n, m: s.m, a: s.a, b: s.b, weight: s.weight }
@@ -108,7 +122,8 @@ export function application({ db, storage, BackendError }) {
 
   function cleanMeta(m) {
     if (
-      !m || typeof m !== 'object' ||
+      !m ||
+      typeof m !== 'object' ||
       !num(m.density, 0.25, 1) ||
       !num(m.energy, 0, 1) ||
       !int(m.activeColorBand, 0, 3) ||
@@ -189,11 +204,29 @@ export function application({ db, storage, BackendError }) {
     createdAt: Date.parse(r.created_at),
   })
 
-  // 展厅容量有限：顺手清掉超过 24 小时仍未完成上传的 pending 记录与对象
+  // 校验前 12 字节真实图片魔数（WebP RIFF..WEBP / JPEG FF D8 FF / PNG 89 50 4E 47）
+  function hasValidImageMagic(bytes) {
+    if (bytes.length < 12) return false
+    const isWebp =
+      bytes[0] === 0x52 &&
+      bytes[1] === 0x49 &&
+      bytes[2] === 0x46 &&
+      bytes[3] === 0x46 &&
+      bytes[8] === 0x57 &&
+      bytes[9] === 0x45 &&
+      bytes[10] === 0x42 &&
+      bytes[11] === 0x50
+    const isJpeg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
+    const isPng = bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47
+    return isWebp || isJpeg || isPng
+  }
+
+  // 展厅容量有限：顺手清掉超过 10 分钟仍未完成上传的孤儿 pending 记录与对象
   async function cleanupStalePending() {
     try {
       const stale = rows(
-        await db.from('artworks')
+        await db
+          .from('artworks')
           .select('id,image_path,state_path,created_at')
           .eq('status', 'pending')
           .order('created_at', { ascending: true })
@@ -225,7 +258,8 @@ export function application({ db, storage, BackendError }) {
       const offset = Number(offsetRaw)
       if (offset > MAX_OFFSET) fail('invalid_input', 400)
       const data = rows(
-        await db.from('artworks')
+        await db
+          .from('artworks')
           .select('id,title,author_display,theme,source,pattern,replay_meta,image_path,created_at')
           .eq('status', 'ready')
           .order('created_at', { ascending: false })
@@ -250,12 +284,19 @@ export function application({ db, storage, BackendError }) {
       const title = typeof body?.title === 'string' ? body.title.trim() : ''
       const author = typeof body?.author === 'string' ? body.author.trim() : ''
       if (!title || title.length > 60 || !author || author.length > 30) fail('invalid_input', 400)
-      if (!THEMES.includes(body?.theme) || !SOURCES.includes(body?.source)) fail('invalid_input', 400)
+      if (!THEMES.includes(body?.theme) || !SOURCES.includes(body?.source))
+        fail('invalid_input', 400)
       const pattern = cleanPattern(body?.pattern)
       const replayMeta = cleanMeta(body?.replayMeta)
 
       await cleanupStalePending()
-      const all = rows(await db.from('artworks').select('id').limit(MAX_WORKS + 1))
+      const all = rows(
+        await db
+          .from('artworks')
+          .select('id')
+          .eq('status', 'ready')
+          .limit(MAX_WORKS + 1),
+      )
       if (all.length >= MAX_WORKS) fail('gallery_full', 429)
 
       const id = crypto.randomUUID()
@@ -287,8 +328,11 @@ export function application({ db, storage, BackendError }) {
     const detail = path.match(/^\/api\/artworks\/([0-9a-f-]{36})$/)
     if (detail && uuid(detail[1]) && request.method === 'GET') {
       const found = rows(
-        await db.from('artworks')
-          .select('id,title,author_display,theme,source,pattern,replay_meta,image_path,state_path,created_at')
+        await db
+          .from('artworks')
+          .select(
+            'id,title,author_display,theme,source,pattern,replay_meta,image_path,state_path,created_at',
+          )
           .eq('id', detail[1])
           .eq('status', 'ready')
           .limit(1),
@@ -306,7 +350,8 @@ export function application({ db, storage, BackendError }) {
     const complete = path.match(/^\/api\/artworks\/([0-9a-f-]{36})\/complete$/)
     if (complete && uuid(complete[1]) && request.method === 'POST') {
       const found = rows(
-        await db.from('artworks')
+        await db
+          .from('artworks')
           .select('id,status,image_path,state_path,replay_meta')
           .eq('id', complete[1])
           .limit(1),
@@ -315,25 +360,31 @@ export function application({ db, storage, BackendError }) {
       const r = found[0]
       if (r.status === 'ready') return Response.json({ id: r.id, status: 'ready' })
 
-      await readStoredObject(await downloadOrPending(r.image_path), {
+      const image = await readStoredObject(await downloadOrPending(r.image_path), {
         maxBytes: IMAGE_MAX_BYTES,
-        allowedTypes: ['image/webp'],
+        allowedTypes: IMAGE_TYPES,
       })
+      if (!hasValidImageMagic(image)) fail('invalid_upload', 422)
       const state = await readStoredObject(await downloadOrPending(r.state_path), {
         maxBytes: STATE_MAX_BYTES,
         allowedTypes: ['application/octet-stream'],
       })
       // state 格式：SND1 魔数 + uint32 粒数 + 每粒 5 字节（Uint16 x、Uint16 y、Uint8 色桶）
-      const count = state.length >= 8 ? new DataView(state.buffer, state.byteOffset).getUint32(4, true) : 0
+      const count =
+        state.length >= 8 ? new DataView(state.buffer, state.byteOffset).getUint32(4, true) : 0
       if (
-        state[0] !== 0x53 || state[1] !== 0x4e || state[2] !== 0x44 || state[3] !== 0x31 ||
+        state[0] !== 0x53 ||
+        state[1] !== 0x4e ||
+        state[2] !== 0x44 ||
+        state[3] !== 0x31 ||
         count !== r.replay_meta?.count ||
         state.length !== 8 + count * 5
       ) {
         fail('invalid_upload', 422)
       }
       rows(
-        await db.from('artworks')
+        await db
+          .from('artworks')
           .update({ status: 'ready' })
           .eq('id', r.id)
           .eq('status', 'pending')

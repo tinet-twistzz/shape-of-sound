@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { Section } from '@/components/layout/Section'
 import { Button } from '@/components/ui/Button'
@@ -43,7 +43,7 @@ function QuizSkeleton() {
 /** HALL 02 · 寻声猜形：左画框目标图案，右候选声源 + 判定 + 图鉴 */
 export function QuizSection() {
   const { dataSource, audioEngine } = useServices()
-  const { quiz, muted } = useAppState()
+  const { currentSection, quiz, muted, principle } = useAppState()
   const actions = useAppActions()
   const scrollTo = useScrollTo()
   const [retryKey, setRetryKey] = useState(0)
@@ -74,6 +74,9 @@ export function QuizSection() {
   }, [question, presetById])
 
   const answerPreset = question ? (presetById.get(question.answerSoundId) ?? null) : null
+  const selectedPreset = quiz.selectedSoundId
+    ? (presetById.get(quiz.selectedSoundId) ?? null)
+    : null
   const collected = useMemo(
     () =>
       quiz.collectedIds
@@ -89,12 +92,49 @@ export function QuizSection() {
     [],
   )
 
-  const startPlaying = (preset: SoundPreset) => {
-    audioEngine.play(preset)
-    setPlayingId(preset.id)
-    if (playTimer.current !== null) window.clearTimeout(playTimer.current)
-    playTimer.current = window.setTimeout(() => setPlayingId(null), PLAYING_MS)
-  }
+  const startPlaying = useCallback(
+    (preset: SoundPreset) => {
+      audioEngine.play(preset)
+      setPlayingId(preset.id)
+      if (playTimer.current !== null) window.clearTimeout(playTimer.current)
+      playTimer.current = window.setTimeout(() => setPlayingId(null), PLAYING_MS)
+    },
+    [audioEngine],
+  )
+
+  useEffect(() => {
+    if (currentSection !== 'quiz' || !question || principle.open) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.repeat) return
+      if (event.ctrlKey || event.metaKey || event.altKey) return
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return
+      const target = event.target
+      if (
+        target instanceof HTMLElement &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return
+      }
+      if (event.key === '1' || event.key === '2' || event.key === '3') {
+        const preset = options[Number(event.key) - 1]
+        if (preset) {
+          event.preventDefault()
+          startPlaying(preset)
+        }
+      } else if (event.key === 'Enter' && quiz.result === 'correct') {
+        if (target instanceof HTMLElement && target.closest('button:not(:disabled), a[href]')) {
+          return
+        }
+        event.preventDefault()
+        actions.nextQuestion()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [currentSection, question, principle.open, options, quiz.result, startPlaying, actions])
 
   const handleChoose = (soundId: string) => {
     if (!question) return
@@ -152,7 +192,10 @@ export function QuizSection() {
           collected={collected}
           total={total}
           onGoStudio={() => scrollTo('studio')}
-          onRestart={actions.resetQuiz}
+          onRestart={() => {
+            actions.resetQuiz()
+            setRetryKey((key) => key + 1)
+          }}
         />
       )}
 
@@ -173,7 +216,12 @@ export function QuizSection() {
           <div className={styles.panel}>
             <div className={styles.toolbar}>
               <QuizProgress index={quiz.index} total={total} solved={quiz.result === 'correct'} />
-              <CollectionBadge collected={collected} total={total} />
+              <CollectionBadge
+                collected={collected}
+                total={total}
+                playingId={playingId}
+                onPlay={startPlaying}
+              />
             </div>
 
             <QuizOptionList
@@ -190,6 +238,8 @@ export function QuizSection() {
             <QuizFeedback
               result={quiz.result}
               question={question}
+              selectedPreset={selectedPreset}
+              answerPreset={answerPreset}
               explanation={explanation}
               isLast={quiz.index === total - 1}
               onNext={actions.nextQuestion}

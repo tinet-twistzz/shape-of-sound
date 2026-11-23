@@ -1,3 +1,4 @@
+import { PatternThumbnail } from '@/components/sand/PatternThumbnail'
 import { Button } from '@/components/ui/Button'
 import {
   ArrowRightIcon,
@@ -9,13 +10,15 @@ import {
 import { Tag } from '@/components/ui/Tag'
 import { copy } from '@/content/copy'
 import type { QuizResult } from '@/store/appStateContext'
-import type { QuizQuestion } from '@/types/domain'
+import type { QuizQuestion, SoundPreset } from '@/types/domain'
 
 import styles from './QuizFeedback.module.css'
 
 export interface QuizFeedbackProps {
   result: QuizResult | null
   question: QuizQuestion
+  selectedPreset?: SoundPreset | null
+  answerPreset?: SoundPreset | null
   /** 答对时的一句话解释 */
   explanation: string
   isLast: boolean
@@ -23,15 +26,25 @@ export interface QuizFeedbackProps {
   onRetry: () => void
 }
 
-/** 判定反馈：答对 → 解释 + 下一幅；答错 → hint + 再试一次 */
+/** 判定反馈：答对 → 解释 + 下一幅；答错 → 声纹对比 + hint + 再试一次 */
 export function QuizFeedback({
   result,
   question,
+  selectedPreset,
+  answerPreset,
   explanation,
   isLast,
   onNext,
   onRetry,
 }: QuizFeedbackProps) {
+  const compareHint = selectedPreset
+    ? answerPreset && selectedPreset.frequencyHz > answerPreset.frequencyHz
+      ? copy.sections.quiz.wrongCompareHigher(selectedPreset.patternName)
+      : answerPreset && selectedPreset.frequencyHz < answerPreset.frequencyHz
+        ? copy.sections.quiz.wrongCompareLower(selectedPreset.patternName)
+        : copy.sections.quiz.wrongCompareOther(selectedPreset.patternName)
+    : ''
+
   return (
     <div className={styles.region} aria-live="polite">
       {result === null && (
@@ -61,17 +74,38 @@ export function QuizFeedback({
       )}
 
       {result === 'wrong' && (
-        <div className={`${styles.plate} ${styles.wrong}`} key={`wrong-${question.id}`}>
+        <div
+          className={`${styles.plate} ${styles.wrong}`}
+          key={`wrong-${question.id}-${selectedPreset?.id ?? ''}`}
+        >
           <div className={styles.head}>
             <span className={`${styles.mark} ${styles.markWrong}`} aria-hidden="true">
               <CloseIcon size={14} />
             </span>
             <h3 className={`display ${styles.title}`}>{copy.sections.quiz.wrongToast}</h3>
           </div>
-          <p className={styles.text}>
-            <span className={`mono ${styles.hintLabel}`}>{copy.sections.quiz.hintCode}</span>
-            {question.hint}
-          </p>
+          {selectedPreset ? (
+            <div className={styles.compareRow}>
+              <div className={styles.compareThumb}>
+                <PatternThumbnail pattern={selectedPreset.pattern} theme="gold" size={52} />
+              </div>
+              <div className={styles.compareBody}>
+                <span className={`mono ${styles.compareLabel}`}>
+                  {copy.sections.quiz.wrongCompareLabel}
+                </span>
+                <p className={styles.compareText}>{compareHint}</p>
+                <p className={styles.text}>
+                  <span className={`mono ${styles.hintLabel}`}>{copy.sections.quiz.hintCode}</span>
+                  {question.hint}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <p className={styles.text}>
+              <span className={`mono ${styles.hintLabel}`}>{copy.sections.quiz.hintCode}</span>
+              {question.hint}
+            </p>
+          )}
           <div className={styles.actions}>
             <Button variant="outline" onClick={onRetry}>
               <RefreshIcon size={14} />

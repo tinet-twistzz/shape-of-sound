@@ -10,8 +10,7 @@ export const quizSoundPool: SoundPreset[] = [
     name: '迪吉里杜管共鸣',
     subtitle: '澳洲千年空气柱驻波',
     emoji: '🪵',
-    description:
-      '澳洲最古老的共鸣管乐器，吹奏者靠口腔共鸣在空心木管里建立超低沉的空气柱驻波。',
+    description: '澳洲最古老的共鸣管乐器，吹奏者靠口腔共鸣在空心木管里建立超低沉的空气柱驻波。',
     pitchLevel: 'low',
     frequencyHz: 75,
     audioUrl: '/sounds/quiz-didgeridoo.m4a',
@@ -66,8 +65,7 @@ export const quizSoundPool: SoundPreset[] = [
     name: '竖琴波节泛音',
     subtitle: '轻触琴弦不动点激出的清音',
     emoji: '🎶',
-    description:
-      '手指轻按竖琴弦正中的“波节不动点”再拨弦，抑制低音基频，只留下纯净清透的高阶泛音。',
+    description: '手指轻按竖琴弦正中的“波节不动点”再拨弦，抑制低音基频，只留下纯净清透的高阶泛音。',
     pitchLevel: 'mid',
     frequencyHz: 880,
     audioUrl: '/sounds/quiz-harp-harmonic.m4a',

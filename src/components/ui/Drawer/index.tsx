@@ -1,10 +1,11 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import type { KeyboardEvent, ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 
 import { CloseIcon } from '@/components/ui/icons'
 import { IconButton } from '@/components/ui/IconButton'
 import { copy } from '@/content/copy'
+import { useModalLayer } from '@/hooks/useModalLayer'
 
 import styles from './Drawer.module.css'
 
@@ -34,6 +35,7 @@ export function Drawer({
   const [shown, setShown] = useState(false)
   const panelRef = useRef<HTMLElement>(null)
   const titleId = useId()
+  const { handleKeyDown } = useModalLayer(panelRef, { open, onClose })
 
   useEffect(() => {
     if (open) {
@@ -52,61 +54,7 @@ export function Drawer({
     return () => window.clearTimeout(timer)
   }, [open])
 
-  // 锁定滚动（补偿滚动条宽度，避免页面跳动）
-  useEffect(() => {
-    if (!mounted) return
-    const { body, documentElement } = document
-    const prevOverflow = body.style.overflow
-    const prevPadding = body.style.paddingRight
-    const scrollbar = window.innerWidth - documentElement.clientWidth
-    body.style.overflow = 'hidden'
-    if (scrollbar > 0) body.style.paddingRight = `${scrollbar}px`
-    return () => {
-      body.style.overflow = prevOverflow
-      body.style.paddingRight = prevPadding
-    }
-  }, [mounted])
-
-  // 关闭后把焦点还给触发元素
-  useEffect(() => {
-    if (!open) return
-    const trigger = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    return () => trigger?.focus()
-  }, [open])
-
-  useEffect(() => {
-    if (shown) panelRef.current?.focus()
-  }, [shown])
-
-  if (!mounted) return null
-
-  const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
-    if (event.key === 'Escape') {
-      event.stopPropagation()
-      onClose()
-      return
-    }
-    if (event.key !== 'Tab') return
-    const panel = panelRef.current
-    if (!panel) return
-    const focusables = panel.querySelectorAll<HTMLElement>(
-      'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
-    )
-    if (focusables.length === 0) {
-      event.preventDefault()
-      return
-    }
-    const first = focusables[0]
-    const last = focusables[focusables.length - 1]
-    const active = document.activeElement
-    if (event.shiftKey && (active === first || active === panel)) {
-      event.preventDefault()
-      last.focus()
-    } else if (!event.shiftKey && active === last) {
-      event.preventDefault()
-      first.focus()
-    }
-  }
+  if (!open && !mounted) return null
 
   const classes = [styles.root, shown && styles.shown].filter(Boolean).join(' ')
   const panelClasses = [styles.panel, className].filter(Boolean).join(' ')

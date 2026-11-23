@@ -24,7 +24,15 @@ export interface ArtworkCardProps {
 const t = copy.sections.exhibition
 
 /** 深色卡纸 + 暖金细框的静帧画框；列表不跑实时动画 */
-export function ArtworkCard({ title, author, theme, imageUrl, order, onOpen, onRemove }: ArtworkCardProps) {
+export function ArtworkCard({
+  title,
+  author,
+  theme,
+  imageUrl,
+  order,
+  onOpen,
+  onRemove,
+}: ArtworkCardProps) {
   return (
     <div className={styles.card}>
       <button
@@ -34,7 +42,17 @@ export function ArtworkCard({ title, author, theme, imageUrl, order, onOpen, onR
         onClick={onOpen}
       >
         <span className={styles.mat}>
-          <img className={styles.image} src={imageUrl} alt="" loading="lazy" draggable={false} />
+          {imageUrl ? (
+            <img
+              className={styles.image}
+              src={imageUrl}
+              alt=""
+              loading={imageUrl.startsWith('blob:') ? 'eager' : 'lazy'}
+              draggable={false}
+            />
+          ) : (
+            <span className={styles.image} aria-hidden="true" />
+          )}
         </span>
         <span className={styles.label}>
           <span className={`mono ${styles.code}`}>{t.exhibitCode(order)}</span>

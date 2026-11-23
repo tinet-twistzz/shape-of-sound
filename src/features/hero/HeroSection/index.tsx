@@ -28,6 +28,7 @@ export function HeroSection() {
           pattern={backgroundPattern}
           theme="gold"
           energy={BACKGROUND_ENERGY}
+          frameless
           className={styles.sand}
         />
         <div className={styles.scrim} />

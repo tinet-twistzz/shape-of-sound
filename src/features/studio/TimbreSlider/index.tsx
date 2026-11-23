@@ -35,12 +35,7 @@ export function TimbreSlider({ value, onChange, onCommit, className }: TimbreSli
   }
 
   return (
-    <div
-      className={classes}
-      onPointerUp={commit}
-      onPointerCancel={commit}
-      onKeyUp={commit}
-    >
+    <div className={classes} onPointerUp={commit} onPointerCancel={commit} onKeyUp={commit}>
       <div className={styles.head}>
         <label className={styles.label} htmlFor={id}>
           {copy.sections.studio.timbreLabel}

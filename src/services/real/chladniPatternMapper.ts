@@ -1,9 +1,10 @@
 import type { PatternParams } from '@/types/domain'
 import type { PatternMapper } from '@/types/services'
 
-const MIN_HZ = 80
-const MAX_HZ = 2600
-const LOG_SPAN = Math.log(MAX_HZ / MIN_HZ)
+export const SLIDER_MIN_HZ = 80
+export const SLIDER_MAX_HZ = 2600
+export const SLIDER_STEPS = 1000
+const LOG_SPAN = Math.log(SLIDER_MAX_HZ / SLIDER_MIN_HZ)
 const VOICE_MIN_HZ = 85
 const VOICE_MAX_HZ = 650
 
@@ -26,12 +27,86 @@ const MODES: PatternParams[] = [
   { n: 6, m: 7 },
 ]
 
+export interface EigenmodeMark {
+  index: number
+  n: number
+  m: number
+  centerHz: number
+  /** 归一化滑杆位置 [0, 1000] */
+  sliderPos: number
+}
+
+export const EIGEN_MODES: readonly EigenmodeMark[] = MODES.map((mode, index) => {
+  const t = index / (MODES.length - 1)
+  return {
+    index,
+    n: mode.n,
+    m: mode.m,
+    centerHz: Math.round(SLIDER_MIN_HZ * Math.exp(t * LOG_SPAN)),
+    sliderPos: Math.round(t * SLIDER_STEPS),
+  }
+})
+
+export interface ResonanceInfo {
+  index: number
+  n: number
+  m: number
+  locked: boolean
+  snapHz: number
+}
+
 function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value))
 }
 
 function round2(value: number): number {
   return Math.round(value * 100) / 100
+}
+
+/** 频率 (Hz) → 对数均匀滑杆位置 [0, 1000] */
+export function freqToSliderPos(frequencyHz: number): number {
+  const clamped = Math.min(SLIDER_MAX_HZ, Math.max(SLIDER_MIN_HZ, frequencyHz))
+  const t = Math.log(clamped / SLIDER_MIN_HZ) / LOG_SPAN
+  return Math.round(clamp01(t) * SLIDER_STEPS)
+}
+
+/** 对数滑杆位置 [0, 1000] → 频率 (Hz)，靠近本征态中心自动轻磁吸 */
+export function sliderPosToFreq(pos: number, snap = true): number {
+  const clampedPos = Math.min(SLIDER_STEPS, Math.max(0, pos))
+  if (snap) {
+    for (const mark of EIGEN_MODES) {
+      if (Math.abs(clampedPos - mark.sliderPos) <= 13) {
+        return mark.centerHz
+      }
+    }
+  }
+  const t = clampedPos / SLIDER_STEPS
+  return Math.round(SLIDER_MIN_HZ * Math.exp(t * LOG_SPAN))
+}
+
+/** 查询给定频率对应的最近本征态与共振锁定状态 */
+export function getResonanceInfo(frequencyHz: number): ResonanceInfo {
+  const clamped = Math.min(SLIDER_MAX_HZ, Math.max(SLIDER_MIN_HZ, frequencyHz))
+  const t = Math.log(clamped / SLIDER_MIN_HZ) / LOG_SPAN
+  const pos = t * (MODES.length - 1)
+  const near = Math.min(MODES.length - 1, Math.max(0, Math.round(pos)))
+  const distance = Math.abs(pos - near)
+  const mark = EIGEN_MODES[near]
+  return {
+    index: near,
+    n: mark.n,
+    m: mark.m,
+    locked: distance < 0.04,
+    snapHz: mark.centerHz,
+  }
+}
+
+/** 已知模态 (n, m) 反查工坊对应的本征中心频率（未命中则回退 440Hz） */
+export function modeToCenterHz(n: number, m: number, fallbackHz = 440): number {
+  const exact = EIGEN_MODES.find((item) => item.n === n && item.m === m)
+  if (exact) return exact.centerHz
+  const swapped = EIGEN_MODES.find((item) => item.n === m && item.m === n)
+  return swapped ? swapped.centerHz : fallbackHz
 }
 
 /**
@@ -63,8 +138,8 @@ export function centroidToB(centroid: number): number {
 
 export const chladniPatternMapper: PatternMapper = {
   frequencyToPattern(frequencyHz) {
-    const clamped = Math.min(MAX_HZ, Math.max(MIN_HZ, frequencyHz))
-    const t = Math.log(clamped / MIN_HZ) / LOG_SPAN
+    const clamped = Math.min(SLIDER_MAX_HZ, Math.max(SLIDER_MIN_HZ, frequencyHz))
+    const t = Math.log(clamped / SLIDER_MIN_HZ) / LOG_SPAN
     return patternAt(t * (MODES.length - 1), 1.5)
   },
   voiceFrequencyToPattern(frequencyHz) {

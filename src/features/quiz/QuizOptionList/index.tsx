@@ -1,6 +1,12 @@
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
-import { CheckIcon, SoundExhibitIcon, SpeakerIcon, SpeakerMutedIcon } from '@/components/ui/icons'
+import {
+  CheckIcon,
+  CloseIcon,
+  SoundExhibitIcon,
+  SpeakerIcon,
+  SpeakerMutedIcon,
+} from '@/components/ui/icons'
 import { copy } from '@/content/copy'
 import type { QuizResult } from '@/store/appStateContext'
 import type { SoundPreset } from '@/types/domain'
@@ -31,7 +37,7 @@ export function QuizOptionList({
   onPreview,
   onChoose,
 }: QuizOptionListProps) {
-  const revealed = result !== null
+  const revealed = result === 'correct'
 
   return (
     <div className={styles.wrap}>
@@ -82,6 +88,11 @@ export function QuizOptionList({
                       <CheckIcon size={14} />
                     </span>
                   )}
+                  {isWrong && (
+                    <span className={styles.wrongMark} aria-hidden="true">
+                      <CloseIcon size={13} />
+                    </span>
+                  )}
                 </div>
                 <div className={styles.actions}>
                   <Button
@@ -105,7 +116,7 @@ export function QuizOptionList({
                   <Button
                     variant={isCorrect ? 'primary' : 'cyan'}
                     size="sm"
-                    disabled={result !== null}
+                    disabled={result === 'correct' || isWrong}
                     onClick={() => onChoose(preset.id)}
                   >
                     {copy.sections.quiz.submitLabel}

@@ -1,5 +1,6 @@
+import { PatternThumbnail } from '@/components/sand/PatternThumbnail'
 import { Button } from '@/components/ui/Button'
-import { ArrowRightIcon, SparkIcon } from '@/components/ui/icons'
+import { ArrowRightIcon } from '@/components/ui/icons'
 import { copy } from '@/content/copy'
 import { ExpertNote } from '@/features/principle/ExpertNote'
 import { getIllustrationMeta } from '@/features/principle/illustrationMeta'
@@ -13,10 +14,11 @@ export interface PrincipleChapterViewProps {
   onGoToSection: (section: SectionId) => void
 }
 
-/** 单章内容：编号 + 标题 + 一句话摘要 + 正文 + 插图占位 + 学霸模式 + 展区入口 */
+/** 单章内容：编号 + 标题 + 一句话摘要 + 声学图谱 + 正文 + 学霸模式 + 展区入口 */
 export function PrincipleChapterView({ chapter, index, onGoToSection }: PrincipleChapterViewProps) {
   const illustration = getIllustrationMeta(chapter.illustrationKey)
   const relatedSection = chapter.relatedSection
+  const isDual = illustration.plates.length > 1
 
   return (
     <article id={`principle-${chapter.id}`} className={styles.chapter}>
@@ -31,19 +33,31 @@ export function PrincipleChapterView({ chapter, index, onGoToSection }: Principl
         className={[styles.illustration, styles[illustration.tone]].filter(Boolean).join(' ')}
         aria-label={copy.principle.illustrationAria(illustration.label)}
       >
-        <span className={styles.grain} aria-hidden="true">
-          <i />
-          <i />
-          <i />
-        </span>
-        <SparkIcon size={20} className={styles.illustrationIcon} />
-        <figcaption className={styles.illustrationLabel}>
-          {copy.principle.illustrationPrefix}
-          {illustration.label}
-        </figcaption>
-        <span className={`mono ${styles.illustrationCode}`}>
-          {copy.principle.illustrationPending} · {chapter.illustrationKey}
-        </span>
+        <div className={styles.illustrationHead}>
+          <span className={styles.illustrationLabel}>
+            {copy.principle.illustrationPrefix}
+            {illustration.label}
+          </span>
+        </div>
+
+        <div
+          className={[styles.plates, isDual ? styles.platesDual : styles.platesSingle].join(' ')}
+        >
+          {illustration.plates.map((plate) => (
+            <div key={plate.tag} className={styles.plateItem}>
+              <PatternThumbnail
+                pattern={plate.pattern}
+                theme={plate.theme}
+                size={isDual ? 108 : 124}
+              />
+              <span className={`mono ${styles.plateTag}`}>{plate.tag}</span>
+            </div>
+          ))}
+        </div>
+
+        {illustration.caption && (
+          <figcaption className={styles.illustrationCaption}>{illustration.caption}</figcaption>
+        )}
       </figure>
 
       <div className={styles.body}>

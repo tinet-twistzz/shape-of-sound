@@ -1,8 +1,27 @@
 import { createContext, useContext } from 'react'
 
-import type { InputMode, MicStatus, ParticleTheme, QuizQuestion, SectionId } from '@/types/domain'
+import type {
+  InputMode,
+  MicStatus,
+  ParticleMedium,
+  ParticleTheme,
+  PlateShape,
+  QuizQuestion,
+  ResonanceChord,
+  SectionId,
+} from '@/types/domain'
 
 export type QuizResult = 'correct' | 'wrong'
+
+export interface StudioDraft {
+  frequencyHz: number
+  theme?: ParticleTheme
+  plateShape?: PlateShape
+  medium?: ParticleMedium
+  timbre?: number
+  chord?: ResonanceChord
+  nonce: number
+}
 
 interface QuizState {
   index: number
@@ -17,6 +36,7 @@ interface StudioState {
   theme: ParticleTheme
   author: string
   micStatus: MicStatus
+  draft: StudioDraft | null
 }
 
 interface PrincipleState {
@@ -46,6 +66,7 @@ export interface AppActions {
   setTheme(theme: ParticleTheme): void
   setAuthor(author: string): void
   setMicStatus(micStatus: MicStatus): void
+  loadIntoStudio(preset: Omit<StudioDraft, 'nonce'>): void
   toggleMute(): void
   openPrinciple(chapterId?: string): void
   closePrinciple(): void

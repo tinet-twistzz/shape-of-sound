@@ -29,29 +29,41 @@ function median(values: number[]): number {
   return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
 }
 
+const corr = new Float32Array(FFT_SIZE)
+
 function detectPitch(samples: Float32Array, sampleRate: number): number | null {
   const size = samples.length
   const minLag = Math.max(2, Math.floor(sampleRate / MAX_PITCH_HZ))
-  const maxLag = Math.min(size - 2, Math.floor(sampleRate / MIN_PITCH_HZ))
+  const maxLag = Math.min(size - 2, corr.length - 2, Math.floor(sampleRate / MIN_PITCH_HZ))
   if (maxLag <= minLag) return null
 
-  // 多算左右各一个 lag，供局部极大值判定与抛物线插值使用
-  const corr = new Float32Array(maxLag + 2)
-  for (let lag = minLag - 1; lag <= maxLag + 1; lag += 1) {
+  // McLeod NSDF 局部能量归一化：多算左右各一个 lag 供局部极值与抛物线插值使用
+  const startLag = minLag - 1
+  const endLag = maxLag + 1
+  let e0 = 0
+  let eLag = 0
+  const firstCount = size - startLag
+  for (let i = 0; i < firstCount; i += 1) {
+    const a = samples[i]
+    const b = samples[i + startLag]
+    e0 += a * a
+    eLag += b * b
+  }
+  for (let lag = startLag; lag <= endLag; lag += 1) {
+    if (lag > startLag) {
+      const droppedTail = samples[size - lag]
+      const droppedHead = samples[lag - 1]
+      e0 -= droppedTail * droppedTail
+      eLag -= droppedHead * droppedHead
+    }
     let sum = 0
     const count = size - lag
     for (let i = 0; i < count; i += 1) {
       sum += samples[i] * samples[i + lag]
     }
-    corr[lag] = sum / count
+    const denom = e0 + eLag
+    corr[lag] = denom > 1e-12 ? (2 * sum) / denom : 0
   }
-
-  let energy = 0
-  for (let i = 0; i < size; i += 1) {
-    energy += samples[i] * samples[i]
-  }
-  energy /= size
-  if (energy <= 0) return null
 
   // 只取真正的局部极大值：排除从 lag 0 延续的下降段（低频时会被误判为高频峰）
   let bestLag = -1
@@ -63,13 +75,13 @@ function detectPitch(samples: Float32Array, sampleRate: number): number | null {
       bestLag = lag
     }
   }
-  if (bestLag < 0 || bestValue / energy < PITCH_CLARITY) return null
+  if (bestLag < 0 || bestValue < PITCH_CLARITY) return null
 
-  // 优先取接近最高相关度的最小 lag，避免把倍周期误判为基频（低八度跳变）
+  // 优先取接近最高相关度的最小 lag（0.93 比例阈值），抑制倍周期低八度跳变
   let chosen = bestLag
   for (let lag = minLag; lag < bestLag; lag += 1) {
     const isPeak = corr[lag] > corr[lag - 1] && corr[lag] >= corr[lag + 1]
-    if (isPeak && corr[lag] >= bestValue * 0.9) {
+    if (isPeak && corr[lag] >= bestValue * 0.93) {
       chosen = lag
       break
     }
@@ -172,20 +184,51 @@ export function createWebMicInput(): MicInput {
   // stop() 递增使仍在等待授权的 start() 失效，避免迟到的流泄漏
   let generation = 0
   let startPromise: Promise<void> | null = null
+  let detachTrackEnded: (() => void) | null = null
   const pitchHistory: number[] = []
   let smoothedPitch: number | null = null
   let smoothedCentroid: number | null = null
   let smoothedHarmonic: number | null = null
+  let nullPitchFrames = 0
 
   function resetPitch() {
     pitchHistory.length = 0
     smoothedPitch = null
     smoothedCentroid = null
     smoothedHarmonic = null
+    nullPitchFrames = 0
   }
 
   function releaseStream(mediaStream: MediaStream) {
     mediaStream.getTracks().forEach((track) => track.stop())
+  }
+
+  function stop() {
+    generation += 1
+    startPromise = null
+    if (rafId !== null) {
+      cancelAnimationFrame(rafId)
+      rafId = null
+    }
+    if (detachTrackEnded) {
+      detachTrackEnded()
+      detachTrackEnded = null
+    }
+    source?.disconnect()
+    analyser?.disconnect()
+    if (stream) {
+      releaseStream(stream)
+    }
+    if (ctx && ctx.state !== 'closed') {
+      ctx.close().catch((error: unknown) => {
+        console.warn('[WebMicInput] AudioContext 关闭失败', error)
+      })
+    }
+    ctx = null
+    analyser = null
+    source = null
+    stream = null
+    resetPitch()
   }
 
   async function doStart(): Promise<void> {
@@ -211,8 +254,16 @@ export function createWebMicInput(): MicInput {
     try {
       const audioCtx = new Ctor()
       createdCtx = audioCtx
-      if (audioCtx.state === 'suspended') {
+      const stateStr = audioCtx.state as string
+      if (stateStr === 'suspended' || stateStr === 'interrupted') {
         await audioCtx.resume()
+      }
+      if (currentGeneration !== generation) {
+        releaseStream(mediaStream)
+        if (audioCtx.state !== 'closed') {
+          await audioCtx.close().catch(() => undefined)
+        }
+        return
       }
       const analyserNode = audioCtx.createAnalyser()
       analyserNode.fftSize = FFT_SIZE
@@ -245,12 +296,18 @@ export function createWebMicInput(): MicInput {
         if (rms > SILENCE_RMS) {
           const raw = detectPitch(timeData, audioCtx.sampleRate)
           if (raw !== null) {
+            nullPitchFrames = 0
             pitchHistory.push(raw)
             if (pitchHistory.length > MEDIAN_WINDOW) pitchHistory.shift()
             const med = median(pitchHistory)
             smoothedPitch =
               smoothedPitch === null ? med : smoothedPitch + SMOOTH_ALPHA * (med - smoothedPitch)
             pitchHz = smoothedPitch
+          } else {
+            nullPitchFrames += 1
+            if (nullPitchFrames >= 8) {
+              resetPitch()
+            }
           }
         } else {
           resetPitch()
@@ -282,6 +339,18 @@ export function createWebMicInput(): MicInput {
       analyser = analyserNode
       source = sourceNode
       stream = mediaStream
+      const primaryTrack = mediaStream.getAudioTracks()[0]
+      if (primaryTrack) {
+        if (primaryTrack.readyState === 'ended') {
+          stop()
+          return
+        }
+        const onEnded = () => {
+          if (stream === mediaStream) stop()
+        }
+        primaryTrack.addEventListener('ended', onEnded, { once: true })
+        detachTrackEnded = () => primaryTrack.removeEventListener('ended', onEnded)
+      }
       resetPitch()
       rafId = requestAnimationFrame(tick)
     } catch (error) {
@@ -297,34 +366,14 @@ export function createWebMicInput(): MicInput {
     start() {
       if (ctx) return Promise.resolve()
       if (!startPromise) {
-        startPromise = doStart().finally(() => {
-          startPromise = null
+        const p = doStart().finally(() => {
+          if (startPromise === p) startPromise = null
         })
+        startPromise = p
       }
       return startPromise
     },
-    stop() {
-      generation += 1
-      if (rafId !== null) {
-        cancelAnimationFrame(rafId)
-        rafId = null
-      }
-      source?.disconnect()
-      analyser?.disconnect()
-      if (stream) {
-        releaseStream(stream)
-      }
-      if (ctx && ctx.state !== 'closed') {
-        ctx.close().catch((error: unknown) => {
-          console.warn('[WebMicInput] AudioContext 关闭失败', error)
-        })
-      }
-      ctx = null
-      analyser = null
-      source = null
-      stream = null
-      resetPitch()
-    },
+    stop,
     subscribe(listener) {
       listeners.add(listener)
       return () => {

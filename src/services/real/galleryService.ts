@@ -116,7 +116,7 @@ export const galleryService: GalleryService = {
     }
     // 两个签名 URL 同在创建时签发、有效期约 60s；并行上传缩短总耗时，避免慢网下第二个 token 过期
     await Promise.all([
-      putFile(created.imageUpload.signedUrl, image, 'image/webp'),
+      putFile(created.imageUpload.signedUrl, image, image.type || 'image/webp'),
       putFile(created.stateUpload.signedUrl, state, 'application/octet-stream'),
     ])
     const done = await requestJson(`${API}/artworks/${created.id}/complete`, { method: 'POST' })

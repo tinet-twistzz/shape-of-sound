@@ -1,4 +1,10 @@
-import type { ParticleMedium, PitchLevel, PlateShape, ResonanceChord, SectionId } from '@/types/domain'
+import type {
+  ParticleMedium,
+  PitchLevel,
+  PlateShape,
+  ResonanceChord,
+  SectionId,
+} from '@/types/domain'
 
 const quizExplanations: Record<string, string> = {
   q1: '揭晓：这是澳洲的【迪吉里杜管共鸣】！超低频空气柱驻波波长极长，只能画出错落宽阔的线条。',
@@ -6,7 +12,16 @@ const quizExplanations: Record<string, string> = {
   q3: '揭晓：这是 1920 年代发明的隔空乐器【特雷门低音】！手不碰琴身，靠电场变化就能震出对称方阵。',
   q4: '揭晓：这是【琴弓拉响的锯片】！用小提琴弓拉动弯曲钢锯发声，和克拉尼用琴弓拉黄铜板是完全一样的物理原理。',
   q5: '揭晓：这是【竖琴波节泛音】！乐手轻按琴弦正中不动点拨弦，纯化出的高次谐波在沙盘上织出了整齐棋格。',
-  q6: '通关！这是【特雷门高音咏叹】，极高频率让整张沙盘布满密密麻麻的节点星网。',
+  q6: '揭晓：这是【特雷门高音咏叹】，极高频率让整张沙盘布满密密麻麻的节点星网。',
+  q7: '揭晓：这是巴洛克时期的【巴赫 · 羽管键琴】！拨弦古钢琴清亮丰富的泛音列，在沙盘上交织出对称的双线星阵。',
+}
+
+const illustrationCaptions: Record<string, string> = {
+  'air-waves': '低频长波 (1,2) 与中频驻波 (2,3) 的波长尺度对照',
+  'nodal-lines': '波腹剧烈振动弹开沙粒，细沙沿静止波节线汇聚成纹',
+  'pattern-density': '90Hz 超低频大花瓣 vs 2685Hz 高频繁密细蕾丝',
+  applications: '圆盘与六角共振板上的对称声学模态检测',
+  'home-experiment': '纯净基频节线与双音和弦叠加复合声纹对比',
 }
 
 const illustrationLabels: Record<string, string> = {
@@ -59,6 +74,9 @@ export const copy = {
       exhibitCode: (order: number) => `No.${String(order).padStart(2, '0')}`,
       rowPitch: '音高',
       rowPattern: '它画出了',
+      touchHint: '轻点或按住拨动沙盘，看沙粒重聚回波节线',
+      openInStudioLabel: '带入工坊调校',
+      openInStudioToast: (name: string) => `已将「${name}」载入声绘工坊`,
       pitchLabels: {
         low: '低沉',
         mid: '适中',
@@ -69,22 +87,23 @@ export const copy = {
       hallIndex: 'HALL 02',
       title: '寻声猜形',
       altTitles: ['听音辨纹'],
-      caption: '看花纹，猜声音。六道盲听题，从宽阔线条到星云密网，越往后越考验耳朵。',
+      caption: '看花纹，猜声音。七道盲听题，从宽阔线条到星云密网，越往后越考验耳朵。',
       questionCaption: (patternName: string) => `看这幅${patternName}，猜猜它是哪种音调？`,
       submitLabel: '就是它',
       previewLabel: '试听',
       hintLabel: '给点提示',
       correctTitle: '猜对了！',
       correctToast: '猜对了！这件展品已收进你的收藏。',
-      wrongToast: '差一点，再听听花纹的疏密。',
+      wrongToast: '差一点，对比下花纹的疏密再选一次。',
       nextLabel: '下一幅',
       finishLabel: '看看收藏',
       progressLabel: '题目进度',
       collectedLabel: '已收藏展品',
       collectionLabel: '图鉴',
       collectionEmpty: '还没有收藏——猜对一幅，就能收进一幅。',
+      collectionReplayAria: (name: string) => `试听已收藏展品：${name}`,
       completionTitle: '你已经学会听音辨纹了',
-      completionNote: '低音画出大花瓣，高音绣出细蕾丝。六幅声之形，全部收进了你的图鉴。',
+      completionNote: '低音画出大花瓣，高音绣出细蕾丝。全部声之形，都已收进你的图鉴。',
       goStudioLabel: '去声绘工坊亲手创作',
       restartLabel: '重新开始',
       plateCode: (order: number) => `PLATE № ${String(order).padStart(2, '0')}`,
@@ -107,6 +126,13 @@ export const copy = {
       explanations: quizExplanations,
       completionCode: 'HALL 02 · CLEAR',
       completionAll: '全部集齐',
+      wrongCompareLabel: '所选声源声纹',
+      wrongCompareHigher: (name: string) =>
+        `你选的声音音调偏高，会织出更细密的「${name}」——试试更低沉的声源。`,
+      wrongCompareLower: (name: string) =>
+        `你选的声音音调偏低，只能画出更宽疏的「${name}」——试试更清脆的声源。`,
+      wrongCompareOther: (name: string) =>
+        `你选的声音对应「${name}」，再对比下线条走向试试另一个声源。`,
     },
     studio: {
       hallIndex: 'HALL 03',
@@ -273,7 +299,12 @@ export const copy = {
       } satisfies Record<ResonanceChord, string>,
       sandToolsAria: '沙盘仪器工具',
       scatterLabel: '摇散重聚',
-      scatterAria: '摇散沙粒，让它们重新聚向波节线',
+      scatterAria: '摇散沙粒，让它们重新聚向波节线（快捷键 Space）',
+      resonanceLocked: (n: number, m: number) => `共振锁定 · MODE (${n}, ${m})`,
+      resonanceTransit: (n: number, m: number) => `邻近模态 · MODE (${n}, ${m})`,
+      replayToneLabel: '试听当前调音',
+      viewInExhibitionLabel: '去展厅看看',
+      micDeviceBusy: '麦克风设备不可用或正被占用，可改用滑动调音',
       frequencyTones: {
         thunder: '低沉如滚雷',
         whale: '悠远如鲸歌',
@@ -308,6 +339,10 @@ export const copy = {
       replayLoading: '正在唤醒沙粒…',
       replayFallback: '粒子状态加载失败，先看看这幅画的快照',
       scatterLabel: '摇散重聚',
+      listenLabel: '聆听声纹',
+      listenAria: '播放这幅作品对应的声波共鸣',
+      remixLabel: '带入工坊二创',
+      remixToast: (title: string) => `已将《${title}》载入声绘工坊`,
       downloadLabel: '下载典藏卡',
       downloading: '导出中…',
       downloadedToast: '典藏卡已下载',
@@ -327,9 +362,21 @@ export const copy = {
     expertModeLabel: '学霸模式',
     expertModeHint: '术语与公式 · 给好奇的大人',
     illustrationPending: '动画布展中',
-    illustrationPrefix: '插图：',
-    illustrationAria: (label: string) => `插图占位：${label}`,
+    illustrationPrefix: '图谱：',
+    illustrationAria: (label: string) => `声学图谱：${label}`,
     illustrationLabels,
+    illustrationCaptions,
+    illustrationTags: {
+      lowWave: '低频长波 · (1, 2)',
+      midWave: '中频驻波 · (2, 3)',
+      nodal: '波节聚沙 · (2, 4)',
+      lowPetal: '90Hz · 宽花瓣 (1, 2)',
+      highLace: '2685Hz · 细蕾丝 (5, 7)',
+      circlePlate: '圆盘模态 · (3, 2)',
+      hexPlate: '六角模态 · (3, 4)',
+      soloMode: '纯净单音 · (2, 3)',
+      chordMode: '五度和弦 · 复合纹',
+    },
     chapterCode: (order: number) => `CH.${String(order).padStart(2, '0')}`,
   },
   buttons: {
@@ -361,5 +408,6 @@ export const copy = {
   aria: {
     closeDrawer: '关闭抽屉',
     closeToast: '关闭提示',
+    closeDialog: '关闭弹窗',
   },
 } as const

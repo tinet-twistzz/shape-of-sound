@@ -36,6 +36,19 @@ function getAudioContextCtor(): typeof AudioContext | null {
   return window.AudioContext ?? safariWindow.webkitAudioContext ?? null
 }
 
+function isContextSuspended(state: string): boolean {
+  // iOS Safari 与微信内置浏览器切后台或系统打断后会进入非标准 'interrupted' 状态
+  return state === 'suspended' || state === 'interrupted'
+}
+
+function resumeContext(audioCtx: AudioContext) {
+  if (isContextSuspended(audioCtx.state)) {
+    audioCtx.resume().catch((error: unknown) => {
+      console.warn('[WebAudioEngine] AudioContext resume 失败', error)
+    })
+  }
+}
+
 function decodeAudio(ctx: AudioContext, data: ArrayBuffer): Promise<AudioBuffer> {
   // 回调形式兼容不支持 Promise 返回值的旧版 Safari / 微信内核
   return new Promise((resolve, reject) => {
@@ -75,11 +88,7 @@ function createWebAudioEngine(): AudioEngine {
 
   function ensureContext(): AudioContext | null {
     if (ctx) {
-      if (ctx.state === 'suspended') {
-        ctx.resume().catch((error: unknown) => {
-          console.warn('[WebAudioEngine] AudioContext resume 失败', error)
-        })
-      }
+      resumeContext(ctx)
       return ctx
     }
     const Ctor = getAudioContextCtor()
@@ -104,11 +113,7 @@ function createWebAudioEngine(): AudioEngine {
       warmthFilter.connect(masterGain)
       masterGain.connect(safetyLimiter)
       safetyLimiter.connect(ctx.destination)
-      if (ctx.state === 'suspended') {
-        ctx.resume().catch((error: unknown) => {
-          console.warn('[WebAudioEngine] AudioContext resume 失败', error)
-        })
-      }
+      resumeContext(ctx)
       return ctx
     } catch (error) {
       console.warn('[WebAudioEngine] AudioContext 创建失败', error)
@@ -120,11 +125,33 @@ function createWebAudioEngine(): AudioEngine {
     }
   }
 
+  function disconnectVoice(voice: Voice) {
+    for (const source of voice.sources) {
+      source.onended = null
+      source.disconnect()
+    }
+    for (const partial of voice.partialGains ?? []) partial.disconnect()
+    voice.filter?.disconnect()
+    voice.gain.disconnect()
+  }
+
   function stopActiveVoice() {
     const voice = activeVoice
     activeVoice = null
     if (!voice || !ctx || voice.stopped) return
     voice.stopped = true
+    if (ctx.state !== 'running') {
+      // 挂起/打断态下 currentTime 不推进，onended 永不触发，必须同步断连防节点堆积泄漏
+      disconnectVoice(voice)
+      for (const source of voice.sources) {
+        try {
+          source.stop()
+        } catch {
+          // 已结束的 source 重复 stop 会抛 InvalidStateError，忽略即可
+        }
+      }
+      return
+    }
     const now = ctx.currentTime
     holdParam(voice.gain.gain, now)
     voice.gain.gain.setTargetAtTime(0, now, 0.025)
@@ -140,10 +167,7 @@ function createWebAudioEngine(): AudioEngine {
   function trackVoice(voice: Voice) {
     activeVoice = voice
     voice.sources[0].onended = () => {
-      for (const source of voice.sources) source.disconnect()
-      for (const partial of voice.partialGains ?? []) partial.disconnect()
-      voice.filter?.disconnect()
-      voice.gain.disconnect()
+      disconnectVoice(voice)
       if (activeVoice === voice) activeVoice = null
     }
   }
@@ -178,6 +202,7 @@ function createWebAudioEngine(): AudioEngine {
 
   function startBufferVoice(audioCtx: AudioContext, buffer: AudioBuffer) {
     if (!warmthFilter) return
+    resumeContext(audioCtx)
     const source = audioCtx.createBufferSource()
     source.buffer = buffer
     const gain = audioCtx.createGain()
@@ -193,14 +218,11 @@ function createWebAudioEngine(): AudioEngine {
   function playTone(frequencyHz: number, options?: ToneOptions) {
     const timbre = Math.min(1, Math.max(-1, options?.timbre ?? 0))
     const chord = options?.chord ?? 'solo'
-    // 滑杆 / 按钮连击会在同一帧重复触发同参数音，45ms 内忽略防止包络互相打断
+    // 同参 45ms 去重、跨参数 30ms 最小节流，防止快速拖动时包络频繁切断产生爆音
     const nowMs = performance.now()
-    if (
-      nowMs - lastToneTime < 45 &&
-      frequencyHz === lastToneFreq &&
-      timbre === lastToneTimbre &&
-      chord === lastToneChord
-    ) {
+    const sameParams =
+      frequencyHz === lastToneFreq && timbre === lastToneTimbre && chord === lastToneChord
+    if (nowMs - lastToneTime < (sameParams ? 45 : 30)) {
       return
     }
     lastToneTime = nowMs
@@ -317,6 +339,11 @@ function createWebAudioEngine(): AudioEngine {
       partialGains.push(chordGain)
     }
 
+    // 尾音在停止前锚定并线性收敛至绝对零幅值，消除非零相位切断咔哒声
+    const attackEnd = peakGain * (1 - Math.exp(-0.045 / 0.012))
+    const tailAnchor = attackEnd * Math.exp(-(1.35 - 0.045) / 0.26)
+    gain.gain.setValueAtTime(tailAnchor, now + 1.35)
+    gain.gain.linearRampToValueAtTime(0, now + 1.445)
     for (const source of sources) {
       source.start(now)
       source.stop(now + 1.45)

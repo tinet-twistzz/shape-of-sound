@@ -2,10 +2,20 @@
 // 盘形边界统一用有向距离场 plateSignedDist：盘内 < 0、边缘 = 0、盘外 > 0，
 // 出界粒子沿数值法线推回并温和反弹；六角/三角盘用旋转对称平面波叠加驻波场。
 // 长声音压缩画法：rings 把时间切片画成同心年轮（固定圆盘），exposure 取最响瞬间叠印。
-// 场查找表仅在模态变化时重建；动画循环内只做双线性插值，不调用三角函数。
+// 场查找表仅在模态变化时重建；动画循环内只做双线性插值，零对象/闭包分配。
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 
+import {
+  effectiveShape,
+  evalChladniGrid,
+  patternKeyOf,
+  PLATE_R,
+  plateSignedDist,
+  SQRT3_2,
+  TRI_APOTHEM,
+  TRI_R,
+} from '@/components/sand/chladniEval'
 import { copy } from '@/content/copy'
 import type { ParticleMedium, ParticleTheme, PatternParams, PlateShape } from '@/types/domain'
 
@@ -16,7 +26,7 @@ export interface SandCanvasHandle {
   scatter(): void
   /** 导出当前画面为带不透明底色的 PNG Blob */
   snapshot(): Promise<Blob | null>
-  /** 导出缩放后的正方形 WebP 快照（展厅卡片用，默认 600×600 q0.85） */
+  /** 导出缩放后的正方形 WebP 快照（展厅卡片用，默认 600×600 q0.85，Safari 自动回退 JPEG） */
   snapshotScaled(size?: number): Promise<Blob | null>
   /** 导出粒子状态：SND1 魔数 + uint32 粒数 + 每粒 Uint16 x、Uint16 y、Uint8 色桶 */
   exportState(): ArrayBuffer | null
@@ -35,9 +45,13 @@ export interface SandCanvasProps {
   density?: number
   /** voice 主题当前声音色桶：0 暖金 / 1 琉璃青 / 2 极光紫 / 3 高光星白 */
   activeColorBand?: 0 | 1 | 2 | 3
+  /** 无框铺满模式（如序厅背景）：按 max(w,h)/2 等比铺满，省略盘框、标尺网格与底栏铭文 */
+  frameless?: boolean
 }
 
 const GRID = 128
+const HALF_GRID = (GRID - 1) / 2
+const MAX_UV = GRID - 1.0001
 const DESKTOP_COUNT = 30000
 const MOBILE_COUNT = 7000
 const MIN_COUNT = 3000
@@ -45,20 +59,21 @@ const JITTER = 0.05
 const MIGRATE = 0.004
 const DAMPING = 0.86
 const REST_DAMPING = 0.55
-const REST_AMP = 0.02
+const REST_AMP = 0.012
 const POINTER_RADIUS = 0.24
 const POINTER_PUSH = 0.02
+const HOVER_SCALE = 0.3
+const CLICK_IMPULSE_RADIUS = 0.32
+const CLICK_IMPULSE_PUSH = 0.055
+const MIN_FRAME_DT = 14
+const IDLE_SLEEP_FRAMES = 180
+const IDLE_V2_THRESHOLD = 1e-7
 const BG_SOLID = '#0A0C10'
 const BG_TRAIL = 'rgba(10, 12, 16, 0.28)'
 // 孢子拖尾更长：背景衰减更慢，保留呼吸星雾的流动余迹
 const BG_TRAIL_SPORES = 'rgba(10, 12, 16, 0.16)'
 const PLATE_FILL = 'rgba(232, 230, 225, 0.028)'
 const PLATE_RIM = 'rgba(212, 175, 55, 0.4)'
-const PLATE_R = 0.95
-const SQRT3_2 = Math.sqrt(3) / 2
-const HEX_APOTHEM = PLATE_R * SQRT3_2
-const TRI_R = 0.98
-const TRI_APOTHEM = TRI_R / 2
 
 // 四种显影介质的物理参数：阻尼 / 静摩擦 / 弹跳 / 迁移 / 切向涡流占比
 const MEDIUM_PHYSICS: Record<
@@ -68,16 +83,35 @@ const MEDIUM_PHYSICS: Record<
   // 矿物细沙：高静摩擦 + 干脆波腹弹跳（原基准）
   sand: { damping: DAMPING, restDamping: REST_DAMPING, jitter: JITTER, migrate: MIGRATE, swirl: 0 },
   // 声流液银：高粘度顺滑阻尼，低随机弹跳，紧密收束于节线中心
-  mercury: { damping: 0.78, restDamping: 0.42, jitter: JITTER * 0.3, migrate: MIGRATE * 1.6, swirl: 0 },
+  mercury: {
+    damping: 0.78,
+    restDamping: 0.42,
+    jitter: JITTER * 0.3,
+    migrate: MIGRATE * 1.6,
+    swirl: 0,
+  },
   // 织金磁丝：中等阻尼，快速落定
-  filings: { damping: 0.8, restDamping: 0.45, jitter: JITTER * 0.55, migrate: MIGRATE * 1.25, swirl: 0 },
+  filings: {
+    damping: 0.8,
+    restDamping: 0.45,
+    jitter: JITTER * 0.55,
+    migrate: MIGRATE * 1.25,
+    swirl: 0,
+  },
   // 极光孢子：低质量飘逸，叠加切向微涡流，定格后仍沿节线河道缓缓流淌
-  spores: { damping: 0.94, restDamping: 0.82, jitter: JITTER * 0.7, migrate: MIGRATE * 0.85, swirl: 0.15 },
+  spores: {
+    damping: 0.94,
+    restDamping: 0.82,
+    jitter: JITTER * 0.7,
+    migrate: MIGRATE * 0.85,
+    swirl: 0.15,
+  },
 }
 
-// 液银 / 磁丝的有效绘制上限：保性能与观感，超出部分只参与物理不参与笔触
+// 液银 / 磁丝 / 孢子的有效绘制上限：保性能与抑制加色过曝，超出部分只参与物理不参与笔触
 const MERCURY_CAP = 9000
 const FILINGS_CAP = 9000
+const SPORES_CAP = 12000
 
 const THEME_COLORS: Record<ParticleTheme, { base: string; bright: string; glow: string }> = {
   gold: {
@@ -117,28 +151,67 @@ const VOICE_BANDS = [
   'rgba(255, 242, 204, 0.95)',
 ]
 
-// 统一有向距离场：盘内 < 0、边缘 = 0、盘外 > 0。
-// 六角/三角用凸多边形半平面距离（内部与近边处精确），数值法线反弹对所有形状通用
-function plateSignedDist(x: number, y: number, shape: PlateShape): number {
-  switch (shape) {
-    case 'circle':
-      return Math.sqrt(x * x + y * y) - PLATE_R
-    case 'hexagon':
-      return (
-        Math.max(Math.abs(x), Math.abs(0.5 * x + SQRT3_2 * y), Math.abs(0.5 * x - SQRT3_2 * y)) -
-        HEX_APOTHEM
-      )
-    case 'triangle':
-      return Math.max(y, -SQRT3_2 * x - 0.5 * y, SQRT3_2 * x - 0.5 * y) - TRI_APOTHEM
-    default:
-      return Math.max(Math.abs(x), Math.abs(y)) - PLATE_R
+// SVG 标尺预计算坐标：圆盘 12 等分短刻度、六角 6 轴准星与刻度、三角 3 轴准星与刻度
+const CIRCLE_TICKS = Array.from({ length: 12 }, (_, k) => {
+  const ang = (k * Math.PI) / 6
+  const cardinal = k % 3 === 0
+  const rIn = cardinal ? 44.6 : 45.6
+  const rOut = 47.2
+  return {
+    key: k,
+    x1: +(50 + rIn * Math.cos(ang)).toFixed(2),
+    y1: +(50 + rIn * Math.sin(ang)).toFixed(2),
+    x2: +(50 + rOut * Math.cos(ang)).toFixed(2),
+    y2: +(50 + rOut * Math.sin(ang)).toFixed(2),
   }
-}
+})
+
+const HEX_RETICLE = Array.from({ length: 6 }, (_, k) => {
+  const vAng = Math.PI / 6 + (k * Math.PI) / 3
+  const eAng = (k * Math.PI) / 3
+  return {
+    key: k,
+    ax1: +(50 + 3 * Math.cos(vAng)).toFixed(2),
+    ay1: +(50 + 3 * Math.sin(vAng)).toFixed(2),
+    ax2: +(50 + 44.2 * Math.cos(vAng)).toFixed(2),
+    ay2: +(50 + 44.2 * Math.sin(vAng)).toFixed(2),
+    vx1: +(50 + 44.8 * Math.cos(vAng)).toFixed(2),
+    vy1: +(50 + 44.8 * Math.sin(vAng)).toFixed(2),
+    vx2: +(50 + 47.1 * Math.cos(vAng)).toFixed(2),
+    vy2: +(50 + 47.1 * Math.sin(vAng)).toFixed(2),
+    ex1: +(50 + 39.2 * Math.cos(eAng)).toFixed(2),
+    ey1: +(50 + 39.2 * Math.sin(eAng)).toFixed(2),
+    ex2: +(50 + 40.9 * Math.cos(eAng)).toFixed(2),
+    ey2: +(50 + 40.9 * Math.sin(eAng)).toFixed(2),
+  }
+})
+
+const TRI_RETICLE = Array.from({ length: 3 }, (_, k) => {
+  const vAng = -Math.PI / 2 + (k * Math.PI * 2) / 3
+  const eAng = vAng + Math.PI
+  return {
+    key: k,
+    ax1: +(50 + 22.0 * Math.cos(eAng)).toFixed(2),
+    ay1: +(50 + 22.0 * Math.sin(eAng)).toFixed(2),
+    ax2: +(50 + 45.2 * Math.cos(vAng)).toFixed(2),
+    ay2: +(50 + 45.2 * Math.sin(vAng)).toFixed(2),
+    vx1: +(50 + 45.8 * Math.cos(vAng)).toFixed(2),
+    vy1: +(50 + 45.8 * Math.sin(vAng)).toFixed(2),
+    vx2: +(50 + 48.4 * Math.cos(vAng)).toFixed(2),
+    vy2: +(50 + 48.4 * Math.sin(vAng)).toFixed(2),
+    ex1: +(50 + 22.5 * Math.cos(eAng)).toFixed(2),
+    ey1: +(50 + 22.5 * Math.sin(eAng)).toFixed(2),
+    ex2: +(50 + 24.2 * Math.cos(eAng)).toFixed(2),
+    ey2: +(50 + 24.2 * Math.sin(eAng)).toFixed(2),
+  }
+})
 
 interface Field {
   amp: Float32Array
   dirX: Float32Array
   dirY: Float32Array
+  tanX: Float32Array
+  tanY: Float32Array
 }
 
 interface Sim {
@@ -148,6 +221,7 @@ interface Sim {
   patternKey: string
   shape: PlateShape
   platePath: Path2D | null
+  frameless: boolean
   theme: ParticleTheme
   medium: ParticleMedium
   energy: number
@@ -162,265 +236,42 @@ interface Sim {
   w: number
   h: number
   dpr: number
-  pointer: { x: number; y: number; on: boolean }
+  rectLeft: number
+  rectTop: number
+  rectWidth: number
+  rectHeight: number
+  rectDirty: boolean
+  pointer: { x: number; y: number; on: boolean; pressed: boolean }
   inView: boolean
+  sleeping: boolean
+  idleFrames: number
   raf: number
   last: number
   fpsEma: number
   lowMs: number
   readoutAt: number
+  trailRimEnergy: number
+  trailRimStyle: string
   sample: Float32Array
+  boundFrame: (now: number) => void
   onReadout: (fps: number, count: number) => void
 }
 
-function patternKeyOf(pattern: PatternParams): string {
-  const sec = pattern.secondary
-  const secKey = sec ? `${sec.n}.${sec.m}.${sec.weight}` : '0'
-  const slices = pattern.timelineSlices
-  const sliceKey = slices
-    ? slices.map((s) => `${s.n}.${s.m}.${s.a}.${s.b}.${s.weight}`).join('|')
-    : '0'
-  return `${pattern.n}-${pattern.m}-${pattern.a ?? 0}-${pattern.b ?? 0}-${pattern.plateShape ?? 'square'}-${secKey}-${pattern.compressionMode ?? 'live'}-${sliceKey}-${(pattern.twist ?? 0).toFixed(2)}-${pattern.medium ?? 'sand'}`
-}
-
-// 声音年轮固定按圆盘处理；其余模式（含多重曝光）严格服从所选盘形
-function effectiveShape(pattern: PatternParams): PlateShape {
-  if (pattern.compressionMode === 'rings') return 'circle'
-  return pattern.plateShape ?? 'square'
-}
-
-type TimelineSlice = NonNullable<PatternParams['timelineSlices']>[number]
-
-function ringSliceZ(slice: TimelineSlice, r: number, theta: number): number {
-  const loud = 0.35 + 0.65 * slice.weight
-  return Math.cos(Math.PI * slice.m * r) * (slice.a * Math.cos(slice.n * theta) + slice.b) * loud
-}
-
-// 声音年轮：半径等分为 K 圈环带，第 i 片声纹画第 i 圈，
-// 切片中心处纯粹呈现本片花纹，环带交界用 smoothstep 平滑过渡
-function buildRingsField(slices: TimelineSlice[], amp: Float32Array): void {
-  const k = slices.length
-  for (let j = 0; j < GRID; j += 1) {
-    const y = -1 + (2 * j) / (GRID - 1)
-    for (let i = 0; i < GRID; i += 1) {
-      const x = -1 + (2 * i) / (GRID - 1)
-      const r = Math.sqrt(x * x + y * y)
-      if (r > 1) continue
-      const theta = Math.atan2(y, x)
-      const pos = r * k - 0.5
-      let i0 = Math.floor(pos)
-      let frac = pos - i0
-      if (i0 < 0) {
-        i0 = 0
-        frac = 0
-      } else if (i0 >= k - 1) {
-        i0 = k - 1
-        frac = 0
-      }
-      const i1 = Math.min(i0 + 1, k - 1)
-      const t = frac * frac * (3 - 2 * frac)
-      const z0 = ringSliceZ(slices[i0], r, theta)
-      const z1 = i1 === i0 ? z0 : ringSliceZ(slices[i1], r, theta)
-      amp[j * GRID + i] = Math.abs(z0 + (z1 - z0) * t)
-    }
-  }
-}
-
-// 多重曝光：取响度权重最高的前 3 个瞬间（弱于冠军 30% 的层丢弃，
-// 声音单薄时自然退化为 1~2 层），按权重叠成一张复合方盘
-function buildExposureField(slices: TimelineSlice[], amp: Float32Array): void {
-  const sorted = [...slices].sort((p, q) => q.weight - p.weight)
-  const top = sorted
-    .slice(0, 3)
-    .filter((s, idx) => idx === 0 || s.weight >= sorted[0].weight * 0.3)
-  let wSum = 0
-  for (const s of top) wSum += s.weight
-  const layers = top.map((s) => {
-    let b = s.b
-    if (s.n === s.m && s.a + b === 0) b = 1
-    return { n: s.n, m: s.m, a: s.a, b, w: (s.weight / wSum) * 1.8 }
-  })
-  const cosN = layers.map(() => new Float32Array(GRID))
-  const cosM = layers.map(() => new Float32Array(GRID))
-  for (let i = 0; i < GRID; i += 1) {
-    const t = -1 + (2 * i) / (GRID - 1)
-    for (let l = 0; l < layers.length; l += 1) {
-      cosN[l][i] = Math.cos(Math.PI * layers[l].n * t)
-      cosM[l][i] = Math.cos(Math.PI * layers[l].m * t)
-    }
-  }
-  for (let j = 0; j < GRID; j += 1) {
-    for (let i = 0; i < GRID; i += 1) {
-      let z = 0
-      for (let l = 0; l < layers.length; l += 1) {
-        const { a, b, w } = layers[l]
-        z += w * (a * cosN[l][i] * cosM[l][j] + b * cosM[l][i] * cosN[l][j])
-      }
-      amp[j * GRID + i] = Math.abs(z)
-    }
-  }
-}
-
-// 六角盘 / 三角盘：三列互成 60° 的平面波叠加，呈 6 重 / 3 重旋转对称（雪花 / 三叶星阵）。
-// cos(πk(u/2 ± √3v/2)) 用和角公式展开为可分离余弦表，建表后逐格只做乘加
-function buildRotSymField(
-  amp: Float32Array,
-  shape: PlateShape,
-  n: number,
-  m: number,
-  a: number,
-  b: number,
-  sec: { n2: number; m2: number; w2: number } | null,
-  twist: number,
-): void {
-  const triangle = shape === 'triangle'
-  // twist 非 0：把三列平面波整体旋转一个相位角，节线呈涡旋状（建表路径不可分离，逐格直接求值）
-  if (twist !== 0) {
-    const phi = twist * 0.6
-    const cp = Math.cos(phi)
-    const sp = Math.sin(phi)
-    const kN = Math.PI * n
-    const kM = Math.PI * m
-    const kN2 = sec ? Math.PI * sec.n2 : 0
-    const kM2 = sec ? Math.PI * sec.m2 : 0
-    for (let j = 0; j < GRID; j += 1) {
-      const y = -1 + (2 * j) / (GRID - 1)
-      for (let i = 0; i < GRID; i += 1) {
-        const x = -1 + (2 * i) / (GRID - 1)
-        if (plateSignedDist(x, y, shape) > 0) continue
-        const rx = x * cp - y * sp
-        const ry = x * sp + y * cp
-        const u = triangle ? ry : rx
-        const v = triangle ? rx : ry
-        const zn = Math.cos(kN * u) + 2 * Math.cos((kN * u) / 2) * Math.cos(kN * SQRT3_2 * v)
-        const zm = Math.cos(kM * u) + 2 * Math.cos((kM * u) / 2) * Math.cos(kM * SQRT3_2 * v)
-        let z = a * zn + b * zm
-        if (sec) {
-          const zn2 = Math.cos(kN2 * u) + 2 * Math.cos((kN2 * u) / 2) * Math.cos(kN2 * SQRT3_2 * v)
-          const zm2 = Math.cos(kM2 * u) + 2 * Math.cos((kM2 * u) / 2) * Math.cos(kM2 * SQRT3_2 * v)
-          z += sec.w2 * (a * zn2 + b * zm2)
-        }
-        amp[j * GRID + i] = Math.abs(z) / 3
-      }
-    }
-    return
-  }
-  const freqs = sec ? [n, m, sec.n2, sec.m2] : [n, m]
-  const cu = freqs.map(() => new Float32Array(GRID))
-  const ch = freqs.map(() => new Float32Array(GRID))
-  const cv = freqs.map(() => new Float32Array(GRID))
-  for (let i = 0; i < GRID; i += 1) {
-    const t = -1 + (2 * i) / (GRID - 1)
-    for (let f = 0; f < freqs.length; f += 1) {
-      const k = Math.PI * freqs[f]
-      cu[f][i] = Math.cos(k * t)
-      ch[f][i] = Math.cos((k * t) / 2)
-      cv[f][i] = Math.cos(k * SQRT3_2 * t)
-    }
-  }
-  for (let j = 0; j < GRID; j += 1) {
-    const y = -1 + (2 * j) / (GRID - 1)
-    for (let i = 0; i < GRID; i += 1) {
-      const x = -1 + (2 * i) / (GRID - 1)
-      if (plateSignedDist(x, y, shape) > 0) continue
-      const ui = triangle ? j : i
-      const vi = triangle ? i : j
-      const zn = cu[0][ui] + 2 * ch[0][ui] * cv[0][vi]
-      const zm = cu[1][ui] + 2 * ch[1][ui] * cv[1][vi]
-      let z = a * zn + b * zm
-      if (sec) {
-        const zn2 = cu[2][ui] + 2 * ch[2][ui] * cv[2][vi]
-        const zm2 = cu[3][ui] + 2 * ch[3][ui] * cv[3][vi]
-        z += sec.w2 * (a * zn2 + b * zm2)
-      }
-      amp[j * GRID + i] = Math.abs(z) / 3
-    }
-  }
-}
-
 function buildField(pattern: PatternParams): Field {
-  const n = Math.max(1, Math.round(pattern.n))
-  const m = Math.max(1, Math.round(pattern.m))
-  const a = pattern.a ?? 1
-  let b = pattern.b ?? -1
-  // n === m 且 a + b === 0 时方程恒为 0，改为同相叠加形成正交网格
-  if (n === m && a + b === 0) b = 1
-  const sec = pattern.secondary
-  const n2 = sec ? Math.max(1, Math.round(sec.n)) : 0
-  const m2 = sec ? Math.max(1, Math.round(sec.m)) : 0
-  const w2 = sec ? sec.weight : 0
-  // 第二层 n === m 时反相叠加恒为 0，同样改同相
-  const sign2 = n2 === m2 ? 1 : -1
-  const twist = pattern.twist ?? 0
-
   const size = GRID * GRID
+  const rawZ = evalChladniGrid(pattern, GRID)
   const amp = new Float32Array(size)
   const dirX = new Float32Array(size)
   const dirY = new Float32Array(size)
-  const shape = effectiveShape(pattern)
+  const tanX = new Float32Array(size)
+  const tanY = new Float32Array(size)
 
-  const slices = pattern.timelineSlices
-  if (pattern.compressionMode === 'rings' && slices && slices.length > 0) {
-    buildRingsField(slices, amp)
-  } else if (pattern.compressionMode === 'exposure' && slices && slices.length > 0) {
-    buildExposureField(slices, amp)
-  } else if (shape === 'circle') {
-    // 圆盘：放射花瓣 × 同心波纹，z(r,θ) = cos(πmr)·(a·cos(nθ) + b)，圆外置 0
-    // twist 非 0 时角度相位随半径偏转，花瓣旋成 S 型涡旋；twist 为 0 与原式完全一致
-    for (let j = 0; j < GRID; j += 1) {
-      const y = -1 + (2 * j) / (GRID - 1)
-      for (let i = 0; i < GRID; i += 1) {
-        const x = -1 + (2 * i) / (GRID - 1)
-        const r = Math.sqrt(x * x + y * y)
-        if (r > 1) continue
-        const theta = Math.atan2(y, x) + twist * 0.85 * r
-        let z = Math.cos(Math.PI * m * r) * (a * Math.cos(n * theta) + b)
-        if (sec) {
-          z += w2 * Math.cos(Math.PI * m2 * r) * (a * Math.cos(n2 * theta) + b)
-        }
-        amp[j * GRID + i] = Math.abs(z)
-      }
-    }
-  } else if (shape === 'hexagon' || shape === 'triangle') {
-    buildRotSymField(amp, shape, n, m, a, b, sec ? { n2, m2, w2 } : null, twist)
-  } else {
-    // 方盘：正交驻波叠加
-    const cosN = new Float32Array(GRID)
-    const cosM = new Float32Array(GRID)
-    const cosN2 = new Float32Array(GRID)
-    const cosM2 = new Float32Array(GRID)
-    // twist 非 0 时混入自由板反对称奇函数项 sin(πnx)sin(πmy) − sin(πmx)sin(πny)，
-    // 打破四象限镜像，呈四叶风车 / S 型涡旋节线；twist 为 0 时该项恒不叠加
-    const sinN = twist !== 0 ? new Float32Array(GRID) : null
-    const sinM = twist !== 0 ? new Float32Array(GRID) : null
-    for (let i = 0; i < GRID; i += 1) {
-      const t = -1 + (2 * i) / (GRID - 1)
-      cosN[i] = Math.cos(Math.PI * n * t)
-      cosM[i] = Math.cos(Math.PI * m * t)
-      if (sec) {
-        cosN2[i] = Math.cos(Math.PI * n2 * t)
-        cosM2[i] = Math.cos(Math.PI * m2 * t)
-      }
-      if (sinN && sinM) {
-        sinN[i] = Math.sin(Math.PI * n * t)
-        sinM[i] = Math.sin(Math.PI * m * t)
-      }
-    }
-    for (let j = 0; j < GRID; j += 1) {
-      for (let i = 0; i < GRID; i += 1) {
-        let z = a * cosN[i] * cosM[j] + b * cosM[i] * cosN[j]
-        if (sec) {
-          z += w2 * (cosN2[i] * cosM2[j] + sign2 * cosM2[i] * cosN2[j])
-        }
-        if (sinN && sinM) {
-          z += twist * (sinN[i] * sinM[j] - sinM[i] * sinN[j])
-        }
-        amp[j * GRID + i] = Math.abs(z)
-      }
-    }
+  for (let idx = 0; idx < size; idx += 1) {
+    amp[idx] = Math.abs(rawZ[idx])
   }
-  // 迁移方向 = -∇amp（中央差分），归一化后供粒子向波节线漂移
-  const invStep = (GRID - 1) / 2
+
+  // 迁移方向 = -∇amp（指向节线）；等值切向 = (-∂rawZ/∂y, ∂rawZ/∂x)（在 z=0 节线处连续不归零）
+  const invStep = HALF_GRID
   for (let j = 0; j < GRID; j += 1) {
     for (let i = 0; i < GRID; i += 1) {
       const idx = j * GRID + i
@@ -428,6 +279,7 @@ function buildField(pattern: PatternParams): Field {
       const ir = Math.min(i + 1, GRID - 1)
       const jt = Math.max(j - 1, 0)
       const jb = Math.min(j + 1, GRID - 1)
+
       const gx = (amp[j * GRID + ir] - amp[j * GRID + il]) * invStep * 0.5
       const gy = (amp[jb * GRID + i] - amp[jt * GRID + i]) * invStep * 0.5
       const len = Math.sqrt(gx * gx + gy * gy)
@@ -435,9 +287,18 @@ function buildField(pattern: PatternParams): Field {
         dirX[idx] = -gx / len
         dirY[idx] = -gy / len
       }
+
+      const zx = (rawZ[j * GRID + ir] - rawZ[j * GRID + il]) * invStep * 0.5
+      const zy = (rawZ[jb * GRID + i] - rawZ[jt * GRID + i]) * invStep * 0.5
+      const zLen = Math.sqrt(zx * zx + zy * zy)
+      if (zLen > 1e-6) {
+        tanX[idx] = -zy / zLen
+        tanY[idx] = zx / zLen
+      }
     }
   }
-  return { amp, dirX, dirY }
+
+  return { amp, dirX, dirY, tanX, tanY }
 }
 
 function seedRange(sim: Sim, from: number, to: number, recolor = true): void {
@@ -474,8 +335,12 @@ function seedParticles(sim: Sim): void {
 
 function sampleField(sim: Sim, x: number, y: number): void {
   const f = sim.field
-  const u = (x + 1) * ((GRID - 1) / 2)
-  const v = (y + 1) * ((GRID - 1) / 2)
+  let u = (x + 1) * HALF_GRID
+  let v = (y + 1) * HALF_GRID
+  if (u < 0) u = 0
+  else if (u > MAX_UV) u = MAX_UV
+  if (v < 0) v = 0
+  else if (v > MAX_UV) v = MAX_UV
   const i = u | 0
   const j = v | 0
   const fu = u - i
@@ -500,19 +365,79 @@ function sampleField(sim: Sim, x: number, y: number): void {
     f.dirY[idx + GRID + 1] * w11
 }
 
-function stepSim(sim: Sim): void {
+function sampleTangent(sim: Sim, x: number, y: number): void {
+  const f = sim.field
+  let u = (x + 1) * HALF_GRID
+  let v = (y + 1) * HALF_GRID
+  if (u < 0) u = 0
+  else if (u > MAX_UV) u = MAX_UV
+  if (v < 0) v = 0
+  else if (v > MAX_UV) v = MAX_UV
+  const i = u | 0
+  const j = v | 0
+  const fu = u - i
+  const fv = v - j
+  const idx = j * GRID + i
+  const w00 = (1 - fu) * (1 - fv)
+  const w10 = fu * (1 - fv)
+  const w01 = (1 - fu) * fv
+  const w11 = fu * fv
+  const s = sim.sample
+  s[3] =
+    f.tanX[idx] * w00 +
+    f.tanX[idx + 1] * w10 +
+    f.tanX[idx + GRID] * w01 +
+    f.tanX[idx + GRID + 1] * w11
+  s[4] =
+    f.tanY[idx] * w00 +
+    f.tanY[idx + 1] * w10 +
+    f.tanY[idx + GRID] * w01 +
+    f.tanY[idx + GRID + 1] * w11
+}
+
+function applyClickImpulse(sim: Sim, px: number, py: number): void {
+  const p = sim.particles
+  const active = sim.activeCount
+  const r2Max = CLICK_IMPULSE_RADIUS * CLICK_IMPULSE_RADIUS
+  for (let i = 0; i < active; i += 1) {
+    const o = i * 4
+    const dx = p[o] - px
+    const dy = p[o + 1] - py
+    const d2 = dx * dx + dy * dy
+    if (d2 >= r2Max) continue
+    if (d2 > 1e-8) {
+      const d = Math.sqrt(d2)
+      const f = (CLICK_IMPULSE_PUSH * (1 - d / CLICK_IMPULSE_RADIUS)) / d
+      p[o + 2] += dx * f
+      p[o + 3] += dy * f
+    } else {
+      const ang = (i * 2.399963) % (Math.PI * 2)
+      p[o + 2] += Math.cos(ang) * CLICK_IMPULSE_PUSH
+      p[o + 3] += Math.sin(ang) * CLICK_IMPULSE_PUSH
+    }
+  }
+}
+
+function stepSim(sim: Sim): number {
   const p = sim.particles
   const bands = sim.bands
   const energy = sim.energy
   const pointer = sim.pointer
   const pointerOn = pointer.on && sim.interactive
-  const radiusSq = POINTER_RADIUS * POINTER_RADIUS
+  // 桌面悬停（on && !pressed）将排斥半径与推力降至 0.3 倍防误刮，按住拖拽释放 1.0 倍推力
+  const pointerScale = pointer.pressed ? 1 : HOVER_SCALE
+  const effRadius = POINTER_RADIUS * pointerScale
+  const radiusSq = effRadius * effRadius
+  const effPush = POINTER_PUSH * pointerScale
   const active = sim.activeCount
   const phys = MEDIUM_PHYSICS[sim.medium]
+  const migrateScale = phys.migrate * 1.15
   // 孢子涡流驱动不随 amp 衰减：定格在波节线（amp≈0）后仍沿切线缓缓流淌
   const swirlDrift = phys.swirl * MIGRATE
   // voice 主题色桶在落沙时锁定，不随位置覆盖，保留不同时刻的声音色彩
   const lockBands = sim.theme === 'voice'
+  let maxV2 = 0
+
   for (let i = 0; i < active; i += 1) {
     const o = i * 4
     let x = p[o]
@@ -525,13 +450,14 @@ function stepSim(sim: Sim): void {
     const kick = amp * energy * phys.jitter
     vx += (Math.random() - 0.5) * kick
     vy += (Math.random() - 0.5) * kick
-    // 向振幅更小方向（波节线）迁移
-    const pull = amp * phys.migrate
+    // 近节线幂次收束漂移力：在低振幅区维持足够恢复力，压缩节线宽度
+    const pull = amp > 0 ? Math.pow(amp, 0.65) * migrateScale : 0
     vx += sim.sample[1] * pull
     vy += sim.sample[2] * pull
     if (swirlDrift > 0) {
-      vx += -sim.sample[2] * swirlDrift
-      vy += sim.sample[1] * swirlDrift
+      sampleTangent(sim, x, y)
+      vx += sim.sample[3] * swirlDrift
+      vy += sim.sample[4] * swirlDrift
     }
     if (pointerOn) {
       const dx = x - pointer.x
@@ -539,7 +465,7 @@ function stepSim(sim: Sim): void {
       const d2 = dx * dx + dy * dy
       if (d2 < radiusSq && d2 > 1e-8) {
         const d = Math.sqrt(d2)
-        const f = (POINTER_PUSH * (1 - d / POINTER_RADIUS)) / d
+        const f = (effPush * (1 - d / effRadius)) / d
         vx += dx * f
         vy += dy * f
       }
@@ -575,11 +501,14 @@ function stepSim(sim: Sim): void {
     p[o + 1] = y
     p[o + 2] = vx
     p[o + 3] = vy
+    const v2 = vx * vx + vy * vy
+    if (v2 > maxV2) maxV2 = v2
     if (!lockBands) {
       const r2 = x * x + y * y
       bands[i] = r2 < 0.36 ? 0 : r2 < 1.3 ? 1 : 2
     }
   }
+  return maxV2
 }
 
 // 材质笔触的颜色批次与主题取色完全正交：voice 四桶 / neon 三环带 / 其余主题 base+bright 两批
@@ -600,34 +529,37 @@ function inMediumBatch(sim: Sim, i: number, band: number, split: number): boolea
 }
 
 // 声流液银：底层半透明色块 lighter 融合成连续液脉，顶层银白细芯形成金属反光脊
-function drawMercury(sim: Sim, sx: number, sy: number): void {
+function drawMercury(sim: Sim, cx: number, cy: number, s: number): void {
   const { ctx, dpr, particles: p } = sim
   const count = Math.min(sim.activeCount, MERCURY_CAP)
   const split = (count * 0.7) | 0
   const batches = mediumBatchCount(sim.theme)
-  const blob = 3.4 * dpr
+  const blob = 3.2 * dpr
   const blobHalf = blob / 2
   ctx.globalCompositeOperation = 'lighter'
+  ctx.globalAlpha = 0.32
   for (let band = 0; band < batches; band += 1) {
     ctx.fillStyle = mediumBatchColor(sim, band)
     for (let i = 0; i < count; i += 1) {
       if (!inMediumBatch(sim, i, band, split)) continue
       const o = i * 4
-      ctx.fillRect(p[o] * sx + sx - blobHalf, p[o + 1] * sy + sy - blobHalf, blob, blob)
+      ctx.fillRect(p[o] * s + cx - blobHalf, p[o + 1] * s + cy - blobHalf, blob, blob)
     }
   }
   ctx.globalCompositeOperation = 'source-over'
-  const core = 1.1 * dpr
+  ctx.globalAlpha = 0.78
+  const core = 1.0 * dpr
   const coreHalf = core / 2
-  ctx.fillStyle = 'rgba(238, 244, 250, 0.85)'
+  ctx.fillStyle = 'rgba(238, 244, 250, 0.9)'
   for (let i = 0; i < count; i += 1) {
     const o = i * 4
-    ctx.fillRect(p[o] * sx + sx - coreHalf, p[o + 1] * sy + sy - coreHalf, core, core)
+    ctx.fillRect(p[o] * s + cx - coreHalf, p[o + 1] * s + cy - coreHalf, core, core)
   }
+  ctx.globalAlpha = 1
 }
 
-// 织金磁丝：每色批单次 beginPath + moveTo/lineTo + stroke，沿驻波场切线排布极细短丝
-function drawFilings(sim: Sim, sx: number, sy: number): void {
+// 织金磁丝：每色批单次 beginPath + moveTo/lineTo + stroke，沿带符号原场等值切线排布极细短丝
+function drawFilings(sim: Sim, cx: number, cy: number, s: number): void {
   const { ctx, dpr, particles: p } = sim
   const count = Math.min(sim.activeCount, FILINGS_CAP)
   const split = (count * 0.7) | 0
@@ -643,10 +575,9 @@ function drawFilings(sim: Sim, sx: number, sy: number): void {
       const o = i * 4
       const x = p[o]
       const y = p[o + 1]
-      sampleField(sim, x, y)
-      // 切线 = (-dirY, dirX)；场梯度极弱处回退速度方向，再退固定角
-      let tx = -sim.sample[2]
-      let ty = sim.sample[1]
+      sampleTangent(sim, x, y)
+      let tx = sim.sample[3]
+      let ty = sim.sample[4]
       let len = Math.sqrt(tx * tx + ty * ty)
       if (len < 1e-3) {
         tx = p[o + 2]
@@ -660,21 +591,22 @@ function drawFilings(sim: Sim, sx: number, sy: number): void {
       }
       tx = (tx / len) * halfLen
       ty = (ty / len) * halfLen
-      const cx = x * sx + sx
-      const cy = y * sy + sy
-      ctx.moveTo(cx - tx, cy - ty)
-      ctx.lineTo(cx + tx, cy + ty)
+      const px = x * s + cx
+      const py = y * s + cy
+      ctx.moveTo(px - tx, py - ty)
+      ctx.lineTo(px + tx, py + ty)
     }
     ctx.stroke()
   }
 }
 
 // 极光孢子：lighter 加色柔光微粒 + 稀疏星点高光，配合长拖尾呈现呼吸星雾
-function drawSpores(sim: Sim, sx: number, sy: number): void {
-  const { ctx, dpr, particles: p, activeCount: count } = sim
+function drawSpores(sim: Sim, cx: number, cy: number, s: number): void {
+  const { ctx, dpr, particles: p } = sim
+  const count = Math.min(sim.activeCount, SPORES_CAP)
   const split = (count * 0.7) | 0
   const batches = mediumBatchCount(sim.theme)
-  const glow = 2.6 * dpr
+  const glow = 2.5 * dpr
   const glowHalf = glow / 2
   ctx.globalCompositeOperation = 'lighter'
   for (let band = 0; band < batches; band += 1) {
@@ -682,7 +614,7 @@ function drawSpores(sim: Sim, sx: number, sy: number): void {
     for (let i = 0; i < count; i += 1) {
       if (!inMediumBatch(sim, i, band, split)) continue
       const o = i * 4
-      ctx.fillRect(p[o] * sx + sx - glowHalf, p[o + 1] * sy + sy - glowHalf, glow, glow)
+      ctx.fillRect(p[o] * s + cx - glowHalf, p[o + 1] * s + cy - glowHalf, glow, glow)
     }
   }
   const star = 1 * dpr
@@ -690,26 +622,31 @@ function drawSpores(sim: Sim, sx: number, sy: number): void {
   ctx.fillStyle = 'rgba(255, 250, 235, 0.9)'
   for (let i = 0; i < count; i += 6) {
     const o = i * 4
-    ctx.fillRect(p[o] * sx + sx - starHalf, p[o + 1] * sy + sy - starHalf, star, star)
+    ctx.fillRect(p[o] * s + cx - starHalf, p[o + 1] * s + cy - starHalf, star, star)
   }
   ctx.globalCompositeOperation = 'source-over'
+}
+
+function viewportScale(sim: Sim): number {
+  return sim.frameless ? Math.max(sim.w, sim.h) / 2 : Math.min(sim.w, sim.h) / 2
 }
 
 function drawParticles(sim: Sim): void {
   const { ctx, w, h, activeCount: count, particles: p, dpr } = sim
   if (w === 0 || h === 0) return
-  const sx = w / 2
-  const sy = h / 2
+  const cx = w / 2
+  const cy = h / 2
+  const s = viewportScale(sim)
   if (sim.medium === 'mercury') {
-    drawMercury(sim, sx, sy)
+    drawMercury(sim, cx, cy, s)
     return
   }
   if (sim.medium === 'filings') {
-    drawFilings(sim, sx, sy)
+    drawFilings(sim, cx, cy, s)
     return
   }
   if (sim.medium === 'spores') {
-    drawSpores(sim, sx, sy)
+    drawSpores(sim, cx, cy, s)
     return
   }
   if (sim.theme === 'voice') {
@@ -726,9 +663,9 @@ function drawParticles(sim: Sim): void {
         const vx = p[o + 2]
         const vy = p[o + 3]
         if (vx * vx + vy * vy > 1e-4) {
-          ctx.fillRect(p[o] * sx + sx - fastHalf, p[o + 1] * sy + sy - fastHalf, fastSize, fastSize)
+          ctx.fillRect(p[o] * s + cx - fastHalf, p[o + 1] * s + cy - fastHalf, fastSize, fastSize)
         } else {
-          ctx.fillRect(p[o] * sx + sx - half, p[o + 1] * sy + sy - half, size, size)
+          ctx.fillRect(p[o] * s + cx - half, p[o + 1] * s + cy - half, size, size)
         }
       }
     }
@@ -742,7 +679,7 @@ function drawParticles(sim: Sim): void {
       for (let i = 0; i < count; i += 1) {
         if (sim.bands[i] !== band) continue
         const o = i * 4
-        ctx.fillRect(p[o] * sx + sx - half, p[o + 1] * sy + sy - half, size, size)
+        ctx.fillRect(p[o] * s + cx - half, p[o + 1] * s + cy - half, size, size)
       }
     }
     return
@@ -754,20 +691,23 @@ function drawParticles(sim: Sim): void {
   ctx.fillStyle = colors.base
   for (let i = 0; i < split; i += 1) {
     const o = i * 4
-    ctx.fillRect(p[o] * sx + sx - baseHalf, p[o + 1] * sy + sy - baseHalf, baseSize, baseSize)
+    ctx.fillRect(p[o] * s + cx - baseHalf, p[o + 1] * s + cy - baseHalf, baseSize, baseSize)
   }
   const brightSize = 1.8 * dpr
   const brightHalf = brightSize / 2
   ctx.fillStyle = colors.bright
   for (let i = split; i < count; i += 1) {
     const o = i * 4
-    ctx.fillRect(p[o] * sx + sx - brightHalf, p[o + 1] * sy + sy - brightHalf, brightSize, brightSize)
+    ctx.fillRect(p[o] * s + cx - brightHalf, p[o + 1] * s + cy - brightHalf, brightSize, brightSize)
   }
 }
 
 // 与 plateSignedDist 完全吻合的盘面轮廓，仅在换形 / resize 时重建一次
 function buildPlatePath(sim: Sim): void {
-  if (sim.w === 0 || sim.h === 0) return
+  if (sim.w === 0 || sim.h === 0 || sim.frameless) {
+    sim.platePath = null
+    return
+  }
   const s = Math.min(sim.w, sim.h) / 2
   const cx = sim.w / 2
   const cy = sim.h / 2
@@ -802,12 +742,25 @@ function buildPlatePath(sim: Sim): void {
   sim.platePath = path
 }
 
-// 极细暗金外框 + 微弱盘面底色，叠在背景之上、沙粒之下
+// 静帧全量重绘时绘制微弱盘面底色与暗金外框
 function drawPlate(sim: Sim): void {
-  if (!sim.platePath) return
+  if (sim.frameless || !sim.platePath) return
   sim.ctx.fillStyle = PLATE_FILL
   sim.ctx.fill(sim.platePath)
   sim.ctx.strokeStyle = PLATE_RIM
+  sim.ctx.lineWidth = Math.max(1, sim.dpr * 0.75)
+  sim.ctx.stroke(sim.platePath)
+}
+
+// 拖尾帧不重复叠涂 PLATE_FILL（避免灰雾累积），仅以低 alpha 呼吸描边外框
+function strokeTrailRim(sim: Sim): void {
+  if (sim.frameless || !sim.platePath) return
+  const qEnergy = Math.round(sim.energy * 50) / 50
+  if (qEnergy !== sim.trailRimEnergy) {
+    sim.trailRimEnergy = qEnergy
+    sim.trailRimStyle = `rgba(212, 175, 55, ${(0.11 + qEnergy * 0.14).toFixed(3)})`
+  }
+  sim.ctx.strokeStyle = sim.trailRimStyle
   sim.ctx.lineWidth = Math.max(1, sim.dpr * 0.75)
   sim.ctx.stroke(sim.platePath)
 }
@@ -822,7 +775,7 @@ function cleanDraw(sim: Sim): void {
 function trailDraw(sim: Sim): void {
   sim.ctx.fillStyle = sim.medium === 'spores' ? BG_TRAIL_SPORES : BG_TRAIL
   sim.ctx.fillRect(0, 0, sim.w, sim.h)
-  drawPlate(sim)
+  strokeTrailRim(sim)
   drawParticles(sim)
 }
 
@@ -839,14 +792,14 @@ function settle(sim: Sim): void {
 }
 
 function shouldRun(sim: Sim): boolean {
-  return !sim.reduced && sim.inView && !document.hidden
+  return !sim.reduced && sim.inView && !document.hidden && !sim.sleeping
 }
 
 function syncRunning(sim: Sim): void {
   if (shouldRun(sim)) {
     if (sim.raf === 0) {
       sim.last = performance.now()
-      sim.raf = requestAnimationFrame((t) => frame(sim, t))
+      sim.raf = requestAnimationFrame(sim.boundFrame)
     }
   } else if (sim.raf !== 0) {
     cancelAnimationFrame(sim.raf)
@@ -854,12 +807,23 @@ function syncRunning(sim: Sim): void {
   }
 }
 
+function wakeSim(sim: Sim): void {
+  sim.sleeping = false
+  sim.idleFrames = 0
+  syncRunning(sim)
+}
+
 function frame(sim: Sim, now: number): void {
   sim.raf = 0
   if (!shouldRun(sim)) return
   const dt = now - sim.last
+  // 120Hz/144Hz 高刷屏锁定 ~60fps 物理步长与绘制功耗
+  if (dt > 0 && dt < MIN_FRAME_DT) {
+    sim.raf = requestAnimationFrame(sim.boundFrame)
+    return
+  }
   sim.last = now
-  if (dt > 0 && dt < 200) {
+  if (dt > 0 && dt < 1000) {
     sim.fpsEma = sim.fpsEma === 0 ? 1000 / dt : sim.fpsEma * 0.9 + (1000 / dt) * 0.1
     // FPS 连续 1.5s 低于 45：阶梯削减 25% 粒子，下限 3000
     if (sim.fpsEma < 45) {
@@ -873,13 +837,23 @@ function frame(sim: Sim, now: number): void {
       sim.lowMs = 0
     }
   }
-  stepSim(sim)
+  const maxV2 = stepSim(sim)
   trailDraw(sim)
   if (now - sim.readoutAt > 500) {
     sim.readoutAt = now
     sim.onReadout(Math.round(sim.fpsEma), sim.activeCount)
   }
-  sim.raf = requestAnimationFrame((t) => frame(sim, t))
+  if (sim.energy === 0 && !sim.pointer.on && sim.medium !== 'spores' && maxV2 < IDLE_V2_THRESHOLD) {
+    sim.idleFrames += 1
+    if (sim.idleFrames >= IDLE_SLEEP_FRAMES) {
+      sim.sleeping = true
+      cleanDraw(sim)
+      return
+    }
+  } else {
+    sim.idleFrames = 0
+  }
+  sim.raf = requestAnimationFrame(sim.boundFrame)
 }
 
 function isMobileDevice(): boolean {
@@ -887,7 +861,16 @@ function isMobileDevice(): boolean {
 }
 
 export const SandCanvas = forwardRef<SandCanvasHandle, SandCanvasProps>(function SandCanvas(
-  { pattern, theme, energy, interactive = false, className, density = 1, activeColorBand = 1 },
+  {
+    pattern,
+    theme,
+    energy,
+    interactive = false,
+    className,
+    density = 1,
+    activeColorBand = 1,
+    frameless = false,
+  },
   ref,
 ) {
   const clampedEnergy = Math.min(1, Math.max(0, energy))
@@ -904,6 +887,7 @@ export const SandCanvas = forwardRef<SandCanvasHandle, SandCanvasProps>(function
     interactive,
     density: clampedDensity,
     activeColorBand,
+    frameless,
   })
 
   useEffect(() => {
@@ -921,6 +905,7 @@ export const SandCanvas = forwardRef<SandCanvasHandle, SandCanvasProps>(function
       patternKey: patternKeyOf(init.pattern),
       shape: effectiveShape(init.pattern),
       platePath: null,
+      frameless: init.frameless,
       theme: init.theme,
       medium: init.pattern.medium ?? 'sand',
       energy: init.energy,
@@ -935,21 +920,42 @@ export const SandCanvas = forwardRef<SandCanvasHandle, SandCanvasProps>(function
       w: 0,
       h: 0,
       dpr: Math.min(window.devicePixelRatio || 1, 2),
-      pointer: { x: 0, y: 0, on: false },
+      rectLeft: 0,
+      rectTop: 0,
+      rectWidth: 0,
+      rectHeight: 0,
+      rectDirty: true,
+      pointer: { x: 0, y: 0, on: false, pressed: false },
       inView: true,
+      sleeping: false,
+      idleFrames: 0,
       raf: 0,
       last: 0,
       fpsEma: 0,
       lowMs: 0,
       readoutAt: 0,
-      sample: new Float32Array(3),
+      trailRimEnergy: -1,
+      trailRimStyle: 'rgba(212, 175, 55, 0.120)',
+      sample: new Float32Array(5),
+      boundFrame: () => undefined,
       onReadout: import.meta.env.DEV ? (fps, count) => setReadout({ fps, count }) : () => undefined,
     }
+    sim.boundFrame = (t: number) => frame(sim, t)
     simRef.current = sim
     seedRange(sim, 0, sim.count)
 
-    const resize = () => {
+    const refreshRect = () => {
       const rect = container.getBoundingClientRect()
+      sim.rectLeft = rect.left
+      sim.rectTop = rect.top
+      sim.rectWidth = rect.width
+      sim.rectHeight = rect.height
+      sim.rectDirty = false
+      return rect
+    }
+
+    const resize = () => {
+      const rect = refreshRect()
       if (rect.width === 0 || rect.height === 0) return
       const dpr = Math.min(window.devicePixelRatio || 1, 2)
       const w = Math.round(rect.width * dpr)
@@ -968,10 +974,16 @@ export const SandCanvas = forwardRef<SandCanvasHandle, SandCanvasProps>(function
     resizeObserver.observe(container)
     resize()
 
+    const markRectDirty = () => {
+      sim.rectDirty = true
+    }
+    window.addEventListener('scroll', markRectDirty, { passive: true })
+
     const intersectionObserver = new IntersectionObserver((entries) => {
       const entry = entries[0]
       if (!entry) return
       sim.inView = entry.isIntersecting
+      sim.rectDirty = true
       syncRunning(sim)
     })
     intersectionObserver.observe(container)
@@ -979,19 +991,52 @@ export const SandCanvas = forwardRef<SandCanvasHandle, SandCanvasProps>(function
     const onVisibility = () => syncRunning(sim)
     document.addEventListener('visibilitychange', onVisibility)
 
-    const updatePointer = (event: PointerEvent) => {
-      if (!sim.interactive) return
-      const rect = container.getBoundingClientRect()
-      if (rect.width === 0 || rect.height === 0) return
-      sim.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
-      sim.pointer.y = ((event.clientY - rect.top) / rect.height) * 2 - 1
-      sim.pointer.on = true
+    const mapPointer = (event: PointerEvent): boolean => {
+      if (sim.rectDirty || sim.rectWidth === 0 || sim.rectHeight === 0) {
+        refreshRect()
+      }
+      const rw = sim.rectWidth
+      const rh = sim.rectHeight
+      if (rw === 0 || rh === 0) return false
+      const s = sim.frameless ? Math.max(rw, rh) / 2 : Math.min(rw, rh) / 2
+      sim.pointer.x = (event.clientX - sim.rectLeft - rw / 2) / s
+      sim.pointer.y = (event.clientY - sim.rectTop - rh / 2) / s
+      return true
     }
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (!sim.interactive) return
+      sim.rectDirty = true
+      if (!mapPointer(event)) return
+      sim.pointer.on = true
+      sim.pointer.pressed = true
+      applyClickImpulse(sim, sim.pointer.x, sim.pointer.y)
+      if (sim.reduced) settle(sim)
+      else wakeSim(sim)
+    }
+
+    const onPointerMove = (event: PointerEvent) => {
+      if (!sim.interactive) return
+      if (!mapPointer(event)) return
+      sim.pointer.on = true
+      if (!sim.reduced) wakeSim(sim)
+    }
+
+    const onPointerUp = (event: PointerEvent) => {
+      sim.pointer.pressed = false
+      if (event.pointerType !== 'mouse') {
+        sim.pointer.on = false
+      }
+    }
+
     const clearPointer = () => {
       sim.pointer.on = false
+      sim.pointer.pressed = false
     }
-    container.addEventListener('pointermove', updatePointer)
-    container.addEventListener('pointerdown', updatePointer)
+
+    container.addEventListener('pointerdown', onPointerDown)
+    container.addEventListener('pointermove', onPointerMove)
+    container.addEventListener('pointerup', onPointerUp)
     container.addEventListener('pointerleave', clearPointer)
     container.addEventListener('pointercancel', clearPointer)
 
@@ -1003,14 +1048,24 @@ export const SandCanvas = forwardRef<SandCanvasHandle, SandCanvasProps>(function
       sim.raf = 0
       resizeObserver.disconnect()
       intersectionObserver.disconnect()
+      window.removeEventListener('scroll', markRectDirty)
       document.removeEventListener('visibilitychange', onVisibility)
-      container.removeEventListener('pointermove', updatePointer)
-      container.removeEventListener('pointerdown', updatePointer)
+      container.removeEventListener('pointerdown', onPointerDown)
+      container.removeEventListener('pointermove', onPointerMove)
+      container.removeEventListener('pointerup', onPointerUp)
       container.removeEventListener('pointerleave', clearPointer)
       container.removeEventListener('pointercancel', clearPointer)
       simRef.current = null
     }
   }, [])
+
+  useEffect(() => {
+    const sim = simRef.current
+    if (!sim || sim.frameless === frameless) return
+    sim.frameless = frameless
+    buildPlatePath(sim)
+    cleanDraw(sim)
+  }, [frameless])
 
   useEffect(() => {
     const sim = simRef.current
@@ -1026,8 +1081,11 @@ export const SandCanvas = forwardRef<SandCanvasHandle, SandCanvasProps>(function
       seedParticles(sim)
     }
     if (sim.reduced) settle(sim)
-    // 盘形未变时不清屏重绘：保留粒子游向新波节线的自然拖尾，避免逐帧 cleanDraw 闪烁
-    else if (shapeChanged) cleanDraw(sim)
+    else {
+      // 盘形未变时不清屏重绘：保留粒子游向新波节线的自然拖尾，避免逐帧 cleanDraw 闪烁
+      if (shapeChanged) cleanDraw(sim)
+      wakeSim(sim)
+    }
   }, [key, pattern])
 
   useEffect(() => {
@@ -1037,6 +1095,7 @@ export const SandCanvas = forwardRef<SandCanvasHandle, SandCanvasProps>(function
     // 切入彩沙时以当前色桶为底色重新落沙，之后新粒随 density 增长带入新色
     if (theme === 'voice') sim.bands.fill(sim.activeColorBand, 0, sim.count)
     cleanDraw(sim)
+    wakeSim(sim)
   }, [theme])
 
   useEffect(() => {
@@ -1047,6 +1106,7 @@ export const SandCanvas = forwardRef<SandCanvasHandle, SandCanvasProps>(function
     sim.activeCount = Math.round(sim.count * clampedDensity)
     if (sim.activeCount > prev) seedRange(sim, prev, sim.activeCount)
     if (sim.reduced) settle(sim)
+    else wakeSim(sim)
   }, [clampedDensity])
 
   useEffect(() => {
@@ -1057,12 +1117,19 @@ export const SandCanvas = forwardRef<SandCanvasHandle, SandCanvasProps>(function
 
   useEffect(() => {
     const sim = simRef.current
-    if (sim) sim.energy = clampedEnergy
+    if (!sim) return
+    sim.energy = clampedEnergy
+    if (clampedEnergy > 0 && !sim.reduced) wakeSim(sim)
   }, [clampedEnergy])
 
   useEffect(() => {
     const sim = simRef.current
-    if (sim) sim.interactive = interactive
+    if (!sim) return
+    sim.interactive = interactive
+    if (!interactive) {
+      sim.pointer.on = false
+      sim.pointer.pressed = false
+    }
   }, [interactive])
 
   const scatter = useCallback(() => {
@@ -1075,7 +1142,7 @@ export const SandCanvas = forwardRef<SandCanvasHandle, SandCanvasProps>(function
       p[o + 3] += p[o + 1] * 0.06 + (Math.random() - 0.5) * 0.16
     }
     if (sim.reduced) settle(sim)
-    else syncRunning(sim)
+    else wakeSim(sim)
   }, [])
 
   const snapshot = useCallback(async (): Promise<Blob | null> => {
@@ -1089,16 +1156,30 @@ export const SandCanvas = forwardRef<SandCanvasHandle, SandCanvasProps>(function
 
   const snapshotScaled = useCallback(async (size = 600): Promise<Blob | null> => {
     const sim = simRef.current
-    if (!sim || sim.w === 0) return null
+    if (!sim || sim.w === 0 || sim.h === 0) return null
     cleanDraw(sim)
     const off = document.createElement('canvas')
     off.width = size
     off.height = size
     const ctx = off.getContext('2d')
     if (!ctx) return null
-    ctx.drawImage(sim.canvas, 0, 0, size, size)
+    const side = Math.min(sim.w, sim.h)
+    const sx = (sim.w - side) / 2
+    const sy = (sim.h - side) / 2
+    ctx.drawImage(sim.canvas, sx, sy, side, side, 0, 0, size, size)
     return new Promise((resolve) => {
-      off.toBlob((blob) => resolve(blob), 'image/webp', 0.85)
+      off.toBlob(
+        (webpBlob) => {
+          if (webpBlob && webpBlob.type === 'image/webp') {
+            resolve(webpBlob)
+            return
+          }
+          // 旧版 Safari 不支持 WebP 时回退为高画质有损 JPEG，避免 PNG 超出后端 300KB 限制
+          off.toBlob((jpegBlob) => resolve(jpegBlob ?? webpBlob), 'image/jpeg', 0.85)
+        },
+        'image/webp',
+        0.85,
+      )
     })
   }, [])
 
@@ -1130,35 +1211,44 @@ export const SandCanvas = forwardRef<SandCanvasHandle, SandCanvasProps>(function
     const sim = simRef.current
     if (!sim || buffer.byteLength < 8) return false
     const bytes = new Uint8Array(buffer)
-    if (bytes[0] !== 0x53 || bytes[1] !== 0x4e || bytes[2] !== 0x44 || bytes[3] !== 0x31) return false
+    if (bytes[0] !== 0x53 || bytes[1] !== 0x4e || bytes[2] !== 0x44 || bytes[3] !== 0x31)
+      return false
     const view = new DataView(buffer)
-    const n = view.getUint32(4, true)
-    if (n < 1 || n > DESKTOP_COUNT || buffer.byteLength !== 8 + n * 5) return false
+    const rawCount = view.getUint32(4, true)
+    if (rawCount < 1 || rawCount > DESKTOP_COUNT || buffer.byteLength !== 8 + rawCount * 5) {
+      return false
+    }
+    const maxCount = isMobileDevice() ? MOBILE_COUNT : DESKTOP_COUNT
+    const targetCount = Math.min(rawCount, maxCount)
+    const stride = rawCount / targetCount
     const p = sim.particles
-    for (let i = 0; i < n; i += 1) {
+    for (let i = 0; i < targetCount; i += 1) {
+      const src = targetCount === rawCount ? i : Math.min(rawCount - 1, Math.floor(i * stride))
       const o = i * 4
-      p[o] = (view.getUint16(8 + i * 5, true) / 65535) * 2 - 1
-      p[o + 1] = (view.getUint16(10 + i * 5, true) / 65535) * 2 - 1
+      p[o] = (view.getUint16(8 + src * 5, true) / 65535) * 2 - 1
+      p[o + 1] = (view.getUint16(10 + src * 5, true) / 65535) * 2 - 1
       p[o + 2] = 0
       p[o + 3] = 0
-      sim.bands[i] = bytes[12 + i * 5] & 3
+      sim.bands[i] = bytes[12 + src * 5] & 3
     }
-    sim.count = n
+    sim.count = targetCount
     sim.density = 1
-    sim.activeCount = n
+    sim.activeCount = targetCount
     if (sim.reduced) settle(sim)
     else {
       cleanDraw(sim)
-      syncRunning(sim)
+      wakeSim(sim)
     }
     return true
   }, [])
 
-  useImperativeHandle(
-    ref,
-    () => ({ scatter, snapshot, snapshotScaled, exportState, loadState }),
-    [scatter, snapshot, snapshotScaled, exportState, loadState],
-  )
+  useImperativeHandle(ref, () => ({ scatter, snapshot, snapshotScaled, exportState, loadState }), [
+    scatter,
+    snapshot,
+    snapshotScaled,
+    exportState,
+    loadState,
+  ])
 
   const colors = THEME_COLORS[theme]
   const vars = {
@@ -1169,7 +1259,8 @@ export const SandCanvas = forwardRef<SandCanvasHandle, SandCanvasProps>(function
   const shape = effectiveShape(pattern)
   const classes = [
     styles.canvas,
-    shape === 'circle' && styles.circle,
+    shape === 'circle' && !frameless && styles.circle,
+    frameless && styles.frameless,
     interactive && styles.interactive,
     className,
   ]
@@ -1186,45 +1277,72 @@ export const SandCanvas = forwardRef<SandCanvasHandle, SandCanvasProps>(function
     >
       <canvas ref={canvasRef} className={styles.surface} aria-hidden="true" />
       <div className={styles.glow} aria-hidden="true" />
-      <svg className={styles.grid} viewBox="0 0 100 100" aria-hidden="true">
-        {shape === 'circle' ? (
-          <>
-            <circle cx="50" cy="50" r="48.5" className={styles.rim} />
-            <circle cx="50" cy="50" r="24" strokeDasharray="1 4" />
-            <line x1="50" y1="1.5" x2="50" y2="98.5" strokeDasharray="1 4" />
-            <line x1="1.5" y1="50" x2="98.5" y2="50" strokeDasharray="1 4" />
-          </>
-        ) : shape === 'square' ? (
-          <>
-            <line x1="50" y1="4" x2="50" y2="96" strokeDasharray="1 4" />
-            <line x1="4" y1="50" x2="96" y2="50" strokeDasharray="1 4" />
-            {Array.from({ length: 9 }, (_, i) => {
-              const p = (i + 1) * 10
-              return (
-                <g key={p}>
-                  <line x1={p} y1="0" x2={p} y2="1.6" />
-                  <line x1={p} y1="98.4" x2={p} y2="100" />
-                  <line x1="0" y1={p} x2="1.6" y2={p} />
-                  <line x1="98.4" y1={p} x2="100" y2={p} />
+      {!frameless && (
+        <svg className={styles.grid} viewBox="0 0 100 100" aria-hidden="true">
+          {shape === 'circle' ? (
+            <>
+              <circle cx="50" cy="50" r="24" strokeDasharray="1 4" />
+              <line x1="50" y1="3" x2="50" y2="97" strokeDasharray="1 4" />
+              <line x1="3" y1="50" x2="97" y2="50" strokeDasharray="1 4" />
+              {CIRCLE_TICKS.map((t) => (
+                <line
+                  key={t.key}
+                  x1={t.x1}
+                  y1={t.y1}
+                  x2={t.x2}
+                  y2={t.y2}
+                  className={styles.corner}
+                />
+              ))}
+            </>
+          ) : shape === 'square' ? (
+            <>
+              <line x1="50" y1="4" x2="50" y2="96" strokeDasharray="1 4" />
+              <line x1="4" y1="50" x2="96" y2="50" strokeDasharray="1 4" />
+              {Array.from({ length: 9 }, (_, i) => {
+                const p = (i + 1) * 10
+                return (
+                  <g key={p}>
+                    <line x1={p} y1="0" x2={p} y2="1.6" />
+                    <line x1={p} y1="98.4" x2={p} y2="100" />
+                    <line x1="0" y1={p} x2="1.6" y2={p} />
+                    <line x1="98.4" y1={p} x2="100" y2={p} />
+                  </g>
+                )
+              })}
+              <path d="M1 6 V1 H6" className={styles.corner} />
+              <path d="M94 1 H99 V6" className={styles.corner} />
+              <path d="M99 94 V99 H94" className={styles.corner} />
+              <path d="M6 99 H1 V94" className={styles.corner} />
+            </>
+          ) : shape === 'hexagon' ? (
+            <>
+              {HEX_RETICLE.map((r) => (
+                <g key={r.key}>
+                  <line x1={r.ax1} y1={r.ay1} x2={r.ax2} y2={r.ay2} strokeDasharray="1 4" />
+                  <line x1={r.vx1} y1={r.vy1} x2={r.vx2} y2={r.vy2} className={styles.corner} />
+                  <line x1={r.ex1} y1={r.ey1} x2={r.ex2} y2={r.ey2} />
                 </g>
-              )
-            })}
-            <path d="M1 6 V1 H6" className={styles.corner} />
-            <path d="M94 1 H99 V6" className={styles.corner} />
-            <path d="M99 94 V99 H94" className={styles.corner} />
-            <path d="M6 99 H1 V94" className={styles.corner} />
-          </>
-        ) : (
-          <>
-            {/* 异形盘：精确轮廓由 Canvas 按 SDF 绘制，这里只留十字基准线 */}
-            <line x1="50" y1="6" x2="50" y2="94" strokeDasharray="1 4" />
-            <line x1="6" y1="50" x2="94" y2="50" strokeDasharray="1 4" />
-          </>
-        )}
-        <circle cx="50" cy="50" r="0.9" className={styles.centerDot} />
-      </svg>
-      <span className={`mono ${styles.plateCaption}`}>{copy.sand.plateCaption}</span>
-      {import.meta.env.DEV && (
+              ))}
+            </>
+          ) : (
+            <>
+              {TRI_RETICLE.map((r) => (
+                <g key={r.key}>
+                  <line x1={r.ax1} y1={r.ay1} x2={r.ax2} y2={r.ay2} strokeDasharray="1 4" />
+                  <line x1={r.vx1} y1={r.vy1} x2={r.vx2} y2={r.vy2} className={styles.corner} />
+                  <line x1={r.ex1} y1={r.ey1} x2={r.ex2} y2={r.ey2} />
+                </g>
+              ))}
+            </>
+          )}
+          <circle cx="50" cy="50" r="0.9" className={styles.centerDot} />
+        </svg>
+      )}
+      {!frameless && (
+        <span className={`mono ${styles.plateCaption}`}>{copy.sand.plateCaption}</span>
+      )}
+      {import.meta.env.DEV && !frameless && (
         <span className={`mono ${styles.readout}`}>
           n={pattern.n} m={pattern.m} · {theme} · E={clampedEnergy.toFixed(2)} ·{' '}
           {readout.fps > 0 ? `${readout.fps}FPS` : '静态'} ·{' '}

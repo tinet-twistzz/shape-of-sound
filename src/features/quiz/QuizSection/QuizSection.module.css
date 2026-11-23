@@ -20,6 +20,8 @@
 .toolbar {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  flex-wrap: nowrap;
   gap: var(--space-4);
 }
 
@@ -90,7 +92,7 @@
 }
 
 /* ---------- 宽屏：画框随滚动驻留 ---------- */
-@media (min-width: 1200px) {
+@media (min-width: 960px) {
   .layout {
     grid-template-columns: minmax(0, 9fr) minmax(0, 11fr);
     gap: var(--space-7);
@@ -108,7 +110,7 @@
   }
 
   .toolbar {
-    flex-wrap: wrap;
+    gap: var(--space-3);
   }
 
   .errorPlate {

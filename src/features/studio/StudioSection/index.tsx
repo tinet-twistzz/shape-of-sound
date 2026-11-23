@@ -9,12 +9,22 @@ import { SectionHeader } from '@/components/ui/SectionHeader'
 import { QuestionIcon, SpeakerIcon } from '@/components/ui/icons'
 import { useToast } from '@/components/ui/Toast/toastContext'
 import { copy } from '@/content/copy'
+import { useScrollTo } from '@/hooks/useScrollTo'
 import { useServices } from '@/services/serviceContext'
 import { centroidToB } from '@/services/real/chladniPatternMapper'
 import { GalleryError } from '@/services/real/galleryService'
 import { localGallery } from '@/services/real/localGallery'
 import { useAppActions, useAppState } from '@/store/appStateContext'
-import type { Artwork, CompressionMode, InputMode, ParticleMedium, PatternParams, PlateShape, ReplayMeta, ResonanceChord } from '@/types/domain'
+import type {
+  Artwork,
+  CompressionMode,
+  InputMode,
+  ParticleMedium,
+  PatternParams,
+  PlateShape,
+  ReplayMeta,
+  ResonanceChord,
+} from '@/types/domain'
 
 import { ChordSelector } from '../ChordSelector'
 import { FrequencySlider } from '../FrequencySlider'
@@ -40,6 +50,26 @@ import type { UtteranceResult, UtteranceSample } from '../utteranceAnalysis'
 import styles from './StudioSection.module.css'
 
 const t = copy.sections.studio
+
+function classifyMicError(error: unknown): { status: 'denied' | 'unsupported'; busy: boolean } {
+  const name =
+    error && typeof error === 'object' && 'name' in error
+      ? String((error as { name: unknown }).name)
+      : ''
+  if (name === 'NotAllowedError' || name === 'PermissionDeniedError' || name === 'SecurityError') {
+    return { status: 'denied', busy: false }
+  }
+  if (
+    name === 'NotFoundError' ||
+    name === 'NotReadableError' ||
+    name === 'DevicesNotFoundError' ||
+    name === 'TrackStartError' ||
+    name === 'OverconstrainedError'
+  ) {
+    return { status: 'unsupported', busy: true }
+  }
+  return { status: 'unsupported', busy: false }
+}
 
 function ConsoleGroup({
   index,
@@ -67,14 +97,17 @@ function ConsoleGroup({
 /** HALL 03 · 声绘工坊：左实时沙盘，右精密仪器控制台 */
 export function StudioSection() {
   const { patternMapper, audioEngine, micInput, artworkExporter, galleryService } = useServices()
-  const { studio } = useAppState()
+  const { currentSection, studio, principle } = useAppState()
   const actions = useAppActions()
   const toast = useToast()
+  const scrollTo = useScrollTo()
   const sandRef = useRef<SandCanvasHandle>(null)
+  const scatterRafRef = useRef<number | null>(null)
 
   const [micEnergy, setMicEnergy] = useState<number | null>(null)
   const [micWaveform, setMicWaveform] = useState<Float32Array | null>(null)
   const [micCentroid, setMicCentroid] = useState<number | null>(null)
+  const [micDeviceBusy, setMicDeviceBusy] = useState(false)
   const [capturePhase, setCapturePhase] = useState<CapturePhase>('idle')
   const [secondsLeft, setSecondsLeft] = useState(CAPTURE_SECONDS)
   const [utterance, setUtterance] = useState<UtteranceResult | null>(null)
@@ -95,15 +128,27 @@ export function StudioSection() {
   const [chord, setChord] = useState<ResonanceChord>('solo')
   const [busy, setBusy] = useState<SignatureBusy>(null)
   const [publishOpen, setPublishOpen] = useState(false)
+  const [hasSavedArtwork, setHasSavedArtwork] = useState(false)
   const voiceChargeRef = useRef(0)
   const voiceLastAtRef = useRef(0)
 
-  const { inputMode, frequencyHz, theme, author, micStatus } = studio
+  const { inputMode, frequencyHz, theme, author, micStatus, draft } = studio
   const listening = inputMode === 'mic' && micStatus === 'listening'
+  const recording = capturePhase === 'recording' || longPhase === 'recording'
+  const lastMicFreqRef = useRef(frequencyHz)
+  const lastMicFreqAtRef = useRef(0)
+  const lastCentroidRef = useRef<number | null>(null)
+  const lastCentroidAtRef = useRef(0)
   const inputModeRef = useRef(inputMode)
   useEffect(() => {
     inputModeRef.current = inputMode
   }, [inputMode])
+
+  useEffect(() => {
+    if (!listening) {
+      lastMicFreqRef.current = frequencyHz
+    }
+  }, [listening, frequencyHz])
 
   // 人声路径统一走动态频段映射（85–650Hz 舒展到全阶模态），mock 映射器无此方法时退回扫频映射
   const mapVoicePitch = useCallback(
@@ -149,7 +194,20 @@ export function StudioSection() {
     const twist = chordTwist(chord)
     if (twist !== 0) next.twist = twist
     return next
-  }, [inputMode, longSlices, compressionMode, utterance, plateShape, medium, patternMapper, frequencyHz, mapVoicePitch, micCentroid, timbre, chord])
+  }, [
+    inputMode,
+    longSlices,
+    compressionMode,
+    utterance,
+    plateShape,
+    medium,
+    patternMapper,
+    frequencyHz,
+    mapVoicePitch,
+    micCentroid,
+    timbre,
+    chord,
+  ])
   const description = describeFrequency(frequencyHz)
   const energy =
     inputMode === 'mic' && longSlices
@@ -162,17 +220,31 @@ export function StudioSection() {
   const sliderWave = useMemo(() => previewWaveform(frequencyHz), [frequencyHz])
   const waveform = inputMode === 'mic' ? micWaveform : sliderWave
 
-  // 订阅麦克风数据：pitchHz → 图案，volume → 能量，waveform → 示波器；
-  // 有效发声累计能量 → 彩沙密度，音高 × 明亮度 → 当前色桶（响亮峰值直达星白）
+  // 订阅实时麦克风数据（短句/长声录制期间暂停图案更新分支，并对频率与质心做阈值节流）
   useEffect(() => {
-    if (!listening) return
+    if (!listening || recording) return
     voiceLastAtRef.current = performance.now()
+    lastMicFreqAtRef.current = 0
+    lastCentroidAtRef.current = 0
     return micInput.subscribe((frame) => {
-      if (frame.pitchHz !== null) actions.setFrequency(Math.round(frame.pitchHz))
+      const now = performance.now()
+      if (frame.pitchHz !== null) {
+        const hz = Math.round(frame.pitchHz)
+        if (Math.abs(hz - lastMicFreqRef.current) >= 3 && now - lastMicFreqAtRef.current >= 60) {
+          lastMicFreqRef.current = hz
+          lastMicFreqAtRef.current = now
+          actions.setFrequency(hz)
+        }
+      }
       setMicEnergy(frame.volume)
       setMicWaveform(frame.waveform)
-      setMicCentroid(frame.centroid ?? null)
-      const now = performance.now()
+      const quantizedCentroid =
+        frame.centroid !== undefined ? (Math.round(frame.centroid / 0.04) * 4) / 100 : null
+      if (quantizedCentroid !== lastCentroidRef.current && now - lastCentroidAtRef.current >= 80) {
+        lastCentroidRef.current = quantizedCentroid
+        lastCentroidAtRef.current = now
+        setMicCentroid(quantizedCentroid)
+      }
       const dt = Math.min(0.1, (now - voiceLastAtRef.current) / 1000)
       voiceLastAtRef.current = now
       if (frame.volume <= 0.045) return
@@ -187,16 +259,18 @@ export function StudioSection() {
         1,
         voiceChargeRef.current + dt * (0.08 + frame.volume * 0.25),
       )
-      setVoiceDensity(0.3 + 0.7 * voiceChargeRef.current)
+      setVoiceDensity(Math.round((0.3 + 0.7 * voiceChargeRef.current) * 100) / 100)
     })
-  }, [listening, micInput, actions])
+  }, [listening, recording, micInput, actions])
 
   const stopMic = useCallback(() => {
     micInput.stop()
     actions.setMicStatus('idle')
+    setMicDeviceBusy(false)
     setMicEnergy(null)
     setMicWaveform(null)
     setMicCentroid(null)
+    lastCentroidRef.current = null
   }, [micInput, actions])
 
   const resetVoiceSand = useCallback(() => {
@@ -217,6 +291,36 @@ export function StudioSection() {
     setLongElapsed(0)
   }, [])
 
+  // 消费跨厅载入的二创配方草稿：同步盘形/材质/音色/和弦，清空冻结录画，下一帧散沙并试听
+  const draftNonce = draft?.nonce
+  const draftRef = useRef(draft)
+  draftRef.current = draft
+  useEffect(() => {
+    const incoming = draftRef.current
+    if (!incoming || draftNonce === undefined) return
+    if (captureCancelRef.current) {
+      captureCancelRef.current()
+      captureCancelRef.current = null
+    }
+    resetLong()
+    setCapturePhase('idle')
+    setUtterance(null)
+    resetVoiceSand()
+    const nextPlateShape = incoming.plateShape ?? 'square'
+    const nextMedium = incoming.medium ?? 'sand'
+    const nextTimbre = incoming.timbre ?? DEFAULT_TIMBRE
+    const nextChord = incoming.chord ?? 'solo'
+    setPlateShape(nextPlateShape)
+    setMedium(nextMedium)
+    setTimbre(nextTimbre)
+    setChord(nextChord)
+    const raf = requestAnimationFrame(() => {
+      sandRef.current?.scatter()
+      audioEngine.playTone(incoming.frequencyHz, { timbre: nextTimbre, chord: nextChord })
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [draftNonce, audioEngine, resetLong, resetVoiceSand])
+
   // 切回滑动调音时收起麦克风，并取消进行中的采集与长声录画
   useEffect(() => {
     if (inputMode !== 'slider') return
@@ -227,6 +331,7 @@ export function StudioSection() {
     resetLong()
     setCapturePhase('idle')
     setUtterance(null)
+    setMicDeviceBusy(false)
     resetVoiceSand()
     if (micStatus === 'listening' || micStatus === 'requesting') {
       stopMic()
@@ -236,6 +341,10 @@ export function StudioSection() {
   // 离开页面 / 卸载时释放麦克风与采集定时器
   useEffect(
     () => () => {
+      if (scatterRafRef.current !== null) {
+        cancelAnimationFrame(scatterRafRef.current)
+        scatterRafRef.current = null
+      }
       if (captureCancelRef.current) {
         captureCancelRef.current()
         captureCancelRef.current = null
@@ -249,17 +358,36 @@ export function StudioSection() {
     [micInput],
   )
 
+  const scheduleScatter = useCallback(() => {
+    if (scatterRafRef.current !== null) {
+      cancelAnimationFrame(scatterRafRef.current)
+    }
+    scatterRafRef.current = requestAnimationFrame(() => {
+      scatterRafRef.current = null
+      sandRef.current?.scatter()
+    })
+  }, [])
+
+  const applyMicError = useCallback(
+    (error: unknown) => {
+      const classified = classifyMicError(error)
+      setMicDeviceBusy(classified.busy)
+      actions.setMicStatus(classified.status)
+    },
+    [actions],
+  )
+
   const startMic = useCallback(async () => {
     audioEngine.stop()
+    setMicDeviceBusy(false)
     actions.setMicStatus('requesting')
     try {
       await micInput.start()
       actions.setMicStatus('listening')
     } catch (error) {
-      const denied = error instanceof DOMException && error.name === 'NotAllowedError'
-      actions.setMicStatus(denied ? 'denied' : 'unsupported')
+      applyMicError(error)
     }
-  }, [audioEngine, micInput, actions])
+  }, [audioEngine, micInput, actions, applyMicError])
 
   const handleRealtimeStart = useCallback(() => {
     setUtterance(null)
@@ -275,14 +403,14 @@ export function StudioSection() {
     resetLong()
     resetVoiceSand()
     setUtterance(null)
+    setMicDeviceBusy(false)
     audioEngine.stop()
     if (micStatus !== 'listening') {
       actions.setMicStatus('requesting')
       try {
         await micInput.start()
       } catch (error) {
-        const denied = error instanceof DOMException && error.name === 'NotAllowedError'
-        actions.setMicStatus(denied ? 'denied' : 'unsupported')
+        applyMicError(error)
         return
       }
       if (inputModeRef.current !== 'mic') return
@@ -290,6 +418,8 @@ export function StudioSection() {
     }
     const samples: UtteranceSample[] = []
     const unsubscribe = micInput.subscribe((frame) => {
+      setMicEnergy(frame.volume)
+      setMicWaveform(frame.waveform)
       samples.push({
         pitchHz: frame.pitchHz,
         volume: frame.volume,
@@ -311,19 +441,30 @@ export function StudioSection() {
       }
       micInput.stop()
       actions.setMicStatus('idle')
+      setMicEnergy(null)
       setMicWaveform(null)
       const result = analyzeUtterance(samples, mapVoicePitch)
       setUtterance(result)
       setSecondsLeft(0)
       setCapturePhase('done')
-      sandRef.current?.scatter()
+      scheduleScatter()
     }, CAPTURE_SECONDS * 1000)
     captureCancelRef.current = () => {
       window.clearTimeout(timer)
       window.clearInterval(ticker)
       unsubscribe()
     }
-  }, [micStatus, micInput, audioEngine, actions, mapVoicePitch, resetLong, resetVoiceSand])
+  }, [
+    micStatus,
+    micInput,
+    audioEngine,
+    actions,
+    mapVoicePitch,
+    resetLong,
+    resetVoiceSand,
+    applyMicError,
+    scheduleScatter,
+  ])
 
   // 长声音压缩录画：3~20 秒逐帧采集 → 重采样成 16 个时间切片 → 定格成年轮 / 多重曝光
   const startLong = useCallback(async () => {
@@ -335,6 +476,7 @@ export function StudioSection() {
     setCapturePhase('idle')
     setUtterance(null)
     setLongSlices(null)
+    setMicDeviceBusy(false)
     resetVoiceSand()
     audioEngine.stop()
     if (micStatus !== 'listening') {
@@ -342,8 +484,7 @@ export function StudioSection() {
       try {
         await micInput.start()
       } catch (error) {
-        const denied = error instanceof DOMException && error.name === 'NotAllowedError'
-        actions.setMicStatus(denied ? 'denied' : 'unsupported')
+        applyMicError(error)
         return
       }
       if (inputModeRef.current !== 'mic') return
@@ -351,6 +492,8 @@ export function StudioSection() {
     }
     const samples: LongSoundSample[] = []
     const unsubscribe = micInput.subscribe((frame) => {
+      setMicEnergy(frame.volume)
+      setMicWaveform(frame.waveform)
       samples.push({
         pitchHz: frame.pitchHz,
         volume: frame.volume,
@@ -394,7 +537,7 @@ export function StudioSection() {
       setLongDuration(duration)
       setCompressionMode('rings')
       setLongPhase('frozen')
-      sandRef.current?.scatter()
+      scheduleScatter()
     }
     finishLongRef.current = finish
     const ticker = window.setInterval(() => {
@@ -406,7 +549,17 @@ export function StudioSection() {
       window.clearInterval(ticker)
       unsubscribe()
     }
-  }, [micStatus, micInput, audioEngine, actions, mapVoicePitch, toast, resetVoiceSand])
+  }, [
+    micStatus,
+    micInput,
+    audioEngine,
+    actions,
+    mapVoicePitch,
+    toast,
+    resetVoiceSand,
+    applyMicError,
+    scheduleScatter,
+  ])
 
   const handleFinishLong = useCallback(() => {
     finishLongRef.current?.()
@@ -426,10 +579,63 @@ export function StudioSection() {
     sandRef.current?.scatter()
   }, [plateShape, medium])
 
-  const handleCommit = (hz: number) => {
-    audioEngine.playTone(hz, { timbre, chord })
+  const handleCommit = useCallback(
+    (hz: number) => {
+      audioEngine.playTone(hz, { timbre, chord })
+      sandRef.current?.scatter()
+    },
+    [audioEngine, timbre, chord],
+  )
+
+  const handleReplay = useCallback(() => {
+    audioEngine.playTone(frequencyHz, { timbre, chord })
     sandRef.current?.scatter()
-  }
+  }, [audioEngine, frequencyHz, timbre, chord])
+
+  // 工坊激活且无弹窗/输入框聚焦时：按 Space 阻止滚屏并触发试听当前调音 + 摇散重聚
+  useEffect(() => {
+    if (currentSection !== 'studio' || publishOpen || principle.open) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.code !== 'Space' && event.key !== ' ') return
+      if (event.ctrlKey || event.metaKey || event.altKey) return
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return
+      const active =
+        (event.target instanceof HTMLElement ? event.target : null) ??
+        (document.activeElement instanceof HTMLElement ? document.activeElement : null)
+      if (active) {
+        if (active.isContentEditable) return
+        if (active instanceof HTMLInputElement && active.type !== 'range') return
+        if (
+          active.closest(
+            'textarea, select, button, a[href], [role="button"], [role="radio"], [role="tab"]',
+          )
+        ) {
+          return
+        }
+      }
+      event.preventDefault()
+      if (event.repeat) return
+      if (!listening && !recording) {
+        audioEngine.playTone(frequencyHz, { timbre, chord })
+      }
+      if (longPhase === 'idle') {
+        sandRef.current?.scatter()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [
+    currentSection,
+    publishOpen,
+    principle.open,
+    listening,
+    recording,
+    longPhase,
+    audioEngine,
+    frequencyHz,
+    timbre,
+    chord,
+  ])
 
   const handleTimbreChange = (value: number) => {
     setTimbre(value)
@@ -478,11 +684,18 @@ export function StudioSection() {
       }
       await artworkExporter.export(artwork, snapshot)
       try {
-        await localGallery.save({ ...artwork, title, replayMeta: captureReplayMeta(state), image, state })
+        await localGallery.save({
+          ...artwork,
+          title,
+          replayMeta: captureReplayMeta(state),
+          image,
+          state,
+        })
         actions.refreshGallery()
       } catch {
         // 本机收藏失败不影响下载
       }
+      setHasSavedArtwork(true)
       toast(t.downloadedToast, 'success')
     } finally {
       setBusy(null)
@@ -517,6 +730,7 @@ export function StudioSection() {
         const code = error instanceof GalleryError ? error.code : 'network_error'
         toast(code === 'gallery_full' ? t.galleryFullToast : t.publishFailedToast, 'warning')
       }
+      let savedLocal = false
       try {
         await localGallery.save({
           id,
@@ -531,13 +745,19 @@ export function StudioSection() {
           image,
           state,
         })
+        savedLocal = true
       } catch {
         // 本机收藏失败不影响发布结果
       }
       // 无论公共发布成败，本机展厅都已写入；发布成功时公共展厅也需刷新
       actions.refreshGallery()
+      if (published || savedLocal) {
+        setHasSavedArtwork(true)
+      }
       if (published) {
         toast(t.publishedToast, 'success')
+      }
+      if (published || savedLocal) {
         setPublishOpen(false)
       }
     } finally {
@@ -657,6 +877,7 @@ export function StudioSection() {
                     value={frequencyHz}
                     onChange={actions.setFrequency}
                     onCommit={handleCommit}
+                    onReplay={handleReplay}
                   />
                   <TimbreSlider
                     value={timbre}
@@ -668,6 +889,7 @@ export function StudioSection() {
               ) : (
                 <MicPanel
                   status={micStatus}
+                  deviceBusy={micDeviceBusy}
                   capturePhase={capturePhase}
                   secondsLeft={secondsLeft}
                   report={utterance?.report ?? null}
@@ -724,6 +946,7 @@ export function StudioSection() {
                 onAuthorChange={actions.setAuthor}
                 onDownload={() => void handleDownload()}
                 onPublish={() => setPublishOpen(true)}
+                onViewExhibition={hasSavedArtwork ? () => scrollTo('exhibition') : undefined}
                 busy={busy}
               />
             </ConsoleGroup>

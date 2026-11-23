@@ -63,8 +63,7 @@ export const soundPresets: SoundPreset[] = [
     name: '青铜颂钵',
     subtitle: '泛音共鸣与莲花星芒',
     emoji: '🪷',
-    description:
-      '敲击青铜颂钵的饱满长鸣。丰富的金属泛音互相交织，把沙粒雕琢成层层对称的莲花星芒。',
+    description: '敲击青铜颂钵的饱满长鸣。丰富的金属泛音互相交织，把沙粒雕琢成层层对称的莲花星芒。',
     pitchLevel: 'mid',
     frequencyHz: 782,
     audioUrl: '/sounds/singing-bowl.m4a',

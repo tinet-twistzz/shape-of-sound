@@ -18,11 +18,28 @@ function formatDate(ms: number): string {
 
 function fitText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
   if (ctx.measureText(text).width <= maxWidth) return text
-  let out = text
-  while (out.length > 1 && ctx.measureText(`${out}…`).width > maxWidth) {
-    out = out.slice(0, -1)
+  const chars = Array.from(text)
+  while (chars.length > 1 && ctx.measureText(`${chars.join('')}…`).width > maxWidth) {
+    chars.pop()
   }
-  return `${out}…`
+  return `${chars.join('')}…`
+}
+
+async function waitForFonts(timeoutMs = 600): Promise<void> {
+  if (typeof document === 'undefined' || !document.fonts?.ready) return
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    await Promise.race([
+      document.fonts.ready,
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, timeoutMs)
+      }),
+    ])
+  } catch {
+    // 字体加载失败时回退系统字体继续导出
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
 }
 
 async function loadBitmap(blob: Blob): Promise<ImageBitmap | HTMLImageElement | null> {
@@ -62,6 +79,8 @@ export function downloadBlob(blob: Blob, filename: string): void {
 /** 黑金美术馆拍立得：1080×1360，沙盘 920×920，底部衬线展签 + 几何印章 */
 export const canvasArtworkExporter: ArtworkExporter = {
   async export(artwork: Artwork, snapshot: Blob | null): Promise<Blob | null> {
+    await waitForFonts(600)
+
     const canvas = document.createElement('canvas')
     canvas.width = W
     canvas.height = H
@@ -88,7 +107,15 @@ export const canvasArtworkExporter: ArtworkExporter = {
     if (snapshot) {
       const bitmap = await loadBitmap(snapshot)
       if (bitmap) {
-        ctx.drawImage(bitmap, imgX, imgY, imgSize, imgSize)
+        const srcW = 'naturalWidth' in bitmap ? bitmap.naturalWidth || bitmap.width : bitmap.width
+        const srcH =
+          'naturalHeight' in bitmap ? bitmap.naturalHeight || bitmap.height : bitmap.height
+        const side = Math.min(srcW, srcH)
+        if (side > 0) {
+          const sx = (srcW - side) / 2
+          const sy = (srcH - side) / 2
+          ctx.drawImage(bitmap, sx, sy, side, side, imgX, imgY, imgSize, imgSize)
+        }
         if ('close' in bitmap) bitmap.close()
       }
     }
@@ -107,21 +134,26 @@ export const canvasArtworkExporter: ArtworkExporter = {
     ctx.textAlign = 'left'
     ctx.fillStyle = PAPER
     ctx.font = `600 58px ${SERIF}`
-    ctx.fillText(fitText(ctx, `《${title}》`, 800), 80, 1150)
+    ctx.fillText(fitText(ctx, `《${title}》`, 760), 80, 1150)
 
     ctx.fillStyle = 'rgba(232, 230, 225, 0.78)'
     ctx.font = `400 30px ${SERIF}`
-    ctx.fillText(fitText(ctx, `${artwork.author} · ${formatDate(artwork.createdAt)}`, 800), 80, 1210)
+    ctx.fillText(
+      fitText(ctx, `${artwork.author} · ${formatDate(artwork.createdAt)}`, 760),
+      80,
+      1210,
+    )
 
     ctx.fillStyle = GOLD_DIM
     ctx.font = `400 22px ${MONO}`
+    const shapeLabel = copy.sections.studio.plateShapes[artwork.pattern.plateShape ?? 'square']
     const themeLabel = copy.sections.studio.themes[artwork.theme]
     const mediumLabel = copy.sections.studio.mediums[artwork.pattern.medium ?? 'sand']
     ctx.fillText(
       fitText(
         ctx,
-        `${Math.round(artwork.frequencyHz)} HZ · ${themeLabel} · ${mediumLabel} · CHLADNI PLATE`,
-        800,
+        `${Math.round(artwork.frequencyHz)} HZ · MODE (${artwork.pattern.n},${artwork.pattern.m}) · ${shapeLabel} · ${themeLabel} · ${mediumLabel}`,
+        760,
       ),
       80,
       1262,
@@ -144,7 +176,9 @@ export const canvasArtworkExporter: ArtworkExporter = {
       canvas.toBlob((b) => resolve(b), 'image/png')
     })
     if (blob) {
-      const safeTitle = title.replace(/[\\/:*?"<>|]/g, '_').slice(0, 40)
+      const safeTitle = Array.from(title.replace(/[\\/:*?"<>|]/g, '_'))
+        .slice(0, 40)
+        .join('')
       downloadBlob(blob, `声之形-${safeTitle}.png`)
     }
     return blob

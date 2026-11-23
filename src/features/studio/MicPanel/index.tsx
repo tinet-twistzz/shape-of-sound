@@ -15,6 +15,7 @@ export const CAPTURE_SECONDS = 2.5
 
 export interface MicPanelProps {
   status: MicStatus
+  deviceBusy?: boolean
   capturePhase: CapturePhase
   secondsLeft: number
   report: string | null
@@ -47,6 +48,7 @@ const STATUS_TEXT: Record<MicStatus, string> = {
 /** 麦克风面板：说一句话画画 / 长声音压缩录画 / 实时随动 / 失败回退 */
 export function MicPanel({
   status,
+  deviceBusy = false,
   capturePhase,
   secondsLeft,
   report,
@@ -72,6 +74,8 @@ export function MicPanel({
   const busy = recording || longRecording
   const classes = [styles.panel, className].filter(Boolean).join(' ')
 
+  const baseStatusText =
+    status === 'unsupported' && deviceBusy ? t.micDeviceBusy : STATUS_TEXT[status]
   const statusText = longRecording
     ? lc.recording
     : longFrozen
@@ -80,7 +84,7 @@ export function MicPanel({
         ? t.captureListening
         : done
           ? t.captureDone
-          : STATUS_TEXT[status]
+          : baseStatusText
   const progress = Math.min(1, Math.max(0, 1 - secondsLeft / CAPTURE_SECONDS))
   const longProgress = Math.min(100, (longElapsed / LONG_MAX_SECONDS) * 100)
   const canFinishLong = longElapsed >= LONG_MIN_SECONDS
@@ -109,7 +113,9 @@ export function MicPanel({
           <div className={styles.meter} aria-hidden="true">
             <span className={styles.meterFill} style={{ width: `${progress * 100}%` }} />
           </div>
-          <span className={styles.countdownLabel}>{t.captureCountdown(secondsLeft.toFixed(1))}</span>
+          <span className={styles.countdownLabel}>
+            {t.captureCountdown(secondsLeft.toFixed(1))}
+          </span>
         </div>
       )}
 
